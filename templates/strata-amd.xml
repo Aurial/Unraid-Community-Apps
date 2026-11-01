@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Strata AMD</Name>
+  <!-- Strata's official image, ROCm flavor. gfx120x: RX 9000 series and Radeon AI PRO R9700 (RDNA 4).
+       For other AMD cards change the Repository tag: latest-rocm-gfx110x for RX 7000 series (RDNA 3),
+       latest-rocm-gfx1151 for Ryzen AI Max "Strix Halo". No image for RX 6000 series yet. -->
+  <Repository>ghcr.io/niko1221/strata:latest-rocm-gfx120x</Repository>
+  <Registry>https://github.com/Niko1221/Strata/pkgs/container/strata</Registry>
+  <Branch>
+    <Tag>latest-rocm-gfx120x</Tag>
+    <TagDescription>RX 9000 series and Radeon AI PRO R9700 (RDNA 4)</TagDescription>
+  </Branch>
+  <Branch>
+    <Tag>latest-rocm-gfx110x</Tag>
+    <TagDescription>RX 7000 series (RDNA 3)</TagDescription>
+  </Branch>
+  <Branch>
+    <Tag>latest-rocm-gfx1151</Tag>
+    <TagDescription>Ryzen AI Max "Strix Halo" (Radeon 8060S)</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Aurial/Unraid-Community-Apps/issues</Support>
+  <Project>https://github.com/Niko1221/Strata</Project>
+  <ReadMe>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/README.md</ReadMe>
+  <Overview>Strata AMD runs the Qwen3.8-Flash-Next mixture-of-experts model on an AMD GPU plus system RAM, and serves an OpenAI- and Anthropic-compatible API, a chat page and a live monitor. This template runs Strata's official image, ROCm build. For NVIDIA cards use the separate Strata template instead.
+
+Requirements: the amdgpu kernel driver, which Unraid ships as standard (Linux 6.8+) — no driver plugin needed. Pick your card family under Branch when installing: latest-rocm-gfx120x for the RX 9000 series and Radeon AI PRO R9700 (default), latest-rocm-gfx110x for the RX 7000 series, latest-rocm-gfx1151 for Ryzen AI Max (Strix Halo). The RX 6000 series has no image yet. You also need 32 GB of RAM or more (more RAM allows a larger, better model) and room for the model on an SSD pool.
+
+First start: downloads the model into the Data folder and prepares it, which takes a while; watch the log. A stopped download resumes where it left off. Later starts go straight to serving.
+
+API key: always on. Leave it empty and the first start makes one and keeps it in the Data folder; show it with: docker exec "Strata AMD" strata launch --show-key --preset docker (the container name has a space, so quote it). Clients send it as Authorization: Bearer KEY.
+
+Changing settings: edit them and Apply. The new values replace the saved ones on the next start; the model files and tuning stay in the Data folder.
+
+Template and Unraid problems: the Support link. Strata itself: the Project link.</Overview>
+  <Category>AI:</Category>
+  <ExtraSearchTerms>llm qwen local ai openai anthropic api inference chat amd rocm radeon rdna gpu</ExtraSearchTerms>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/templates/strata-amd.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/icon.png</Icon>
+  <License>MIT</License>
+  <!-- From Strata's docs/DOCKER.md (AMD section): /dev/kfd and /dev/dri give the
+       container the card (the render/video groups from the docs are omitted: Unraid
+       has no render group and containers run as root, so adding a 'render' group fails
+       with "unable to find group render"); memlock lets the engine pin the RAM it uses for the model, shm-size gives it shared
+       memory, and stop-timeout gives the model two minutes to unload (Docker's default 10 s kills it, exit 137). -->
+  <ExtraParams>--device /dev/kfd --device /dev/dri --group-add video --ulimit memlock=-1:-1 --shm-size=2g --stop-timeout 120</ExtraParams>
+  <Requires>**amdgpu** kernel driver — Unraid ships it, no driver plugin needed (Linux 6.8+). An RDNA 3 / RDNA 4 / Strix Halo card: RX 7000 series, RX 9000 series, Radeon AI PRO R9700, or Ryzen AI Max — pick the matching **Branch** at install (gfx120x / gfx110x / gfx1151); the RX 6000 series has no image yet. Do not set a memory limit on the container: Strata plans from the server's whole RAM. Do not pin CPUs: the engine sets its own thread affinity.</Requires>
+
+  <Config Name="WebUI / API port" Target="8080" Default="8080" Mode="tcp" Description="Chat page, monitor and the API (/v1 for OpenAI clients, the root URL for Anthropic clients)." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+
+  <Config Name="Data" Target="/data" Default="/mnt/cache/appdata/strata-amd" Mode="rw" Description="The model, the prepared pack, presets, tuning and the API key: tens of GB, the log names the size. Use a direct pool path (/mnt/cache/... or /mnt/POOLNAME/...), not /mnt/user: the engine reads the model files while it runs." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/strata-amd</Config>
+
+  <Config Name="GPUs" Target="GPUS" Default="all" Mode="" Description="The cards the engine uses: numbers as the monitor lists them (0, or 0,1 to split the model across both), or all / empty for the engine's choice. Every named card must match the card family of the Branch." Type="Variable" Display="always" Required="true" Mask="false">all</Config>
+
+  <Config Name="GPU roles" Target="GPU_ROLES" Default="" Mode="" Description="Advanced, multi-card only: a role for each card, like 1=main,0=helper. main runs the final stage (the answer head; Strata picks the faster card by default), helper shares the model's layers, off leaves the card alone; cards you do not name are off. Not together with GPUs. Empty: Strata chooses." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="Model" Target="MODEL" Default="" Mode="" Description="Empty: Strata picks the model it recommends for this server and says so in the log. Or a size such as IQ2_XS, IQ3_XXS, IQ3_S or Q2_0; see docs/MODELS.md in the Strata repository for what each needs." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <Config Name="Model family" Target="FAMILY" Default="" Mode="" Description="Empty for the usual one. qwen, swift (thinks shorter) or coder, when the size exists in several families." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <Config Name="Context length" Target="CONTEXT" Default="32k|64k|128k|256k" Mode="" Description="How much text it remembers at once. Longer costs RAM." Type="Variable" Display="always" Required="true" Mask="false">32k</Config>
+
+  <Config Name="Vision" Target="VISION" Default="off|on|gpu|cpu" Mode="" Description="on: the model reads pictures (about 0.9 GB more to download). gpu or cpu choose where the picture reader runs." Type="Variable" Display="always" Required="true" Mask="false">off</Config>
+
+  <Config Name="API key" Target="API_KEY" Default="" Mode="" Description="16 characters or more (openssl rand -hex 24 makes one). Empty: the first start makes one and keeps it in the Data folder." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+
+  <Config Name="Tuning" Target="TUNE" Default="skip|quick|thorough" Mode="" Description="Measures the best engine settings for this server, once, and keeps them. quick takes up to about 20 minutes on the first start, thorough up to about 2 hours." Type="Variable" Display="advanced" Required="true" Mask="false">skip</Config>
+
+  <Config Name="Tune again" Target="RETUNE" Default="0|1" Mode="" Description="1 tunes again on the next start even if this preset is already tuned, for example after an update. Set it back to 0 afterwards." Type="Variable" Display="advanced" Required="true" Mask="false">0</Config>
+
+  <Config Name="Parallel requests" Target="PARALLEL" Default="" Mode="" Description="Requests answered at the same time, 1 to 8. Empty: fitted to the card." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="KV cache type" Target="KV" Default="int8|q4_0|k8v4|fp16" Mode="" Description="Conversation memory format: int8 (default), q4_0 (half the memory), k8v4, fp16." Type="Variable" Display="advanced" Required="true" Mask="false">int8</Config>
+
+  <Config Name="Existing model files" Target="MODEL_PATH" Default="" Mode="" Description="GGUF files you already have, as a path inside the container. Add a Path mapping for their folder (read-only is fine), e.g. /models, and enter that here; set Model too. Nothing is downloaded for the model itself." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="Engine settings" Target="STRATA_SET" Default="" Mode="" Description="Advanced engine settings, space separated, like strata launch --set." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>
