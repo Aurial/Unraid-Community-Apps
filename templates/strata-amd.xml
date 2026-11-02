@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>Strata AMD</Name>
+  <Name>Strata-AMD</Name>
   <!-- Strata's official image, ROCm flavor. gfx120x: RX 9000 series and Radeon AI PRO R9700 (RDNA 4).
        For other AMD cards change the Repository tag: latest-rocm-gfx110x for RX 7000 series (RDNA 3),
        latest-rocm-gfx1151 for Ryzen AI Max "Strix Halo". No image for RX 6000 series yet. -->
@@ -18,6 +18,14 @@
     <Tag>latest-rocm-gfx1151</Tag>
     <TagDescription>Ryzen AI Max "Strix Halo" (Radeon 8060S)</TagDescription>
   </Branch>
+  <Branch>
+    <Tag>0.2.7-rocm-gfx120x</Tag>
+    <TagDescription>Pinned release (RX 9000 / R9700)</TagDescription>
+  </Branch>
+  <Branch>
+    <Tag>0.2.9-rocm-gfx120x</Tag>
+    <TagDescription>Pinned release (RX 9000 / R9700)</TagDescription>
+  </Branch>
   <Network>bridge</Network>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
@@ -26,13 +34,15 @@
   <ReadMe>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/README.md</ReadMe>
   <Overview>Strata AMD runs the Qwen3.8-Flash-Next mixture-of-experts model on an AMD GPU plus system RAM, and serves an OpenAI- and Anthropic-compatible API, a chat page and a live monitor. This template runs Strata's official image, ROCm build. For NVIDIA cards use the separate Strata template instead.
 
+Before you press Apply: by default Strata also copies the model's experts into system RAM, even ones the GPU already holds. On a server that runs other containers this can use most of your memory (measured: about 59 GiB for the container, leaving 4 GiB for everything else). Set Engine settings to resident-budget-gib=8 (two 32 GB cards) and Parallel requests to 2 unless this server is dedicated to Strata. Single-card servers: see the README before choosing a budget.
+
 Requirements: the amdgpu kernel driver, which Unraid ships as standard (Linux 6.8+) — no driver plugin needed. Pick your card family under Branch when installing: latest-rocm-gfx120x for the RX 9000 series and Radeon AI PRO R9700 (default), latest-rocm-gfx110x for the RX 7000 series, latest-rocm-gfx1151 for Ryzen AI Max (Strix Halo). The RX 6000 series has no image yet. You also need RAM for the model's experts plus about 10 GB: roughly 44 GB (Q2_0), 46 GB (IQ2_XS), 53 GB (IQ3_XXS) or 60 GB (IQ3_S) total, and room for the model on an SSD pool (about 80 GB IQ3_XXS, 90 GB IQ3_S).
 
 First start: downloads the model into the Data folder and prepares it, which takes a while; watch the log. A stopped download resumes where it left off. Later starts go straight to serving. The model name the API serves is listed at http://[IP]:[PORT:8080]/v1/models.
 
 RAM: by default Strata also copies the model's experts into system RAM, even ones the cards already hold — a two-card server used about 59 GiB this way. On a busy server cap it under Engine settings: resident-budget-gib=8 keeps in RAM only what the cards do not hold (about 23 GiB measured, with Parallel requests 2, costing about 9% on cold prompt speed). The model fills the GPU memory too: stop other GPU workloads before starting.
 
-API key: always on. Leave it empty and the first start makes one and keeps it in the Data folder; show it with: docker exec "Strata AMD" strata launch --show-key --preset docker (the container name has a space, so quote it). Clients send it as Authorization: Bearer KEY.
+API key: always on. Leave it empty and the first start makes one and keeps it in the Data folder; show it with: docker exec Strata-AMD strata launch --show-key --preset docker. Clients send it as Authorization: Bearer KEY.
 
 Changing settings: the default image tags (latest-rocm-*) follow the maintainer; once your setup is tuned you can pin a version by editing the Repository tag, for example ghcr.io/niko1221/strata:0.2.7-rocm-gfx120x. Edit settings and Apply. The new values replace the saved ones on the next start; the model files and tuning stay in the Data folder.
 
@@ -44,18 +54,20 @@ Template and Unraid problems: the Support link. Strata itself: the Project link.
   <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/icon.png</Icon>
   <License>MIT</License>
   <!-- From Strata's docs/DOCKER.md (AMD section): /dev/kfd and /dev/dri give the
-       container the card (the render/video groups from the docs are omitted: Unraid
-       has no render group and containers run as root, so adding a 'render' group fails
-       with "unable to find group render"); memlock lets the engine pin the RAM it uses for the model, shm-size gives it shared
-       memory, and stop-timeout gives the model two minutes to unload (Docker's default 10 s kills it, exit 137). -->
+       container the card. Unraid has no render group, so the docs' render group is
+       omitted; adding it fails with 'unable to find group render'. The container runs as
+       root; with the video group both R9700 test cards were visible and in use. memlock
+       lets the engine pin the RAM it uses for the model, shm-size gives it shared memory,
+       and stop-timeout gives the model two minutes to unload (Docker's default 10 s
+       kills it, exit 137). -->
   <ExtraParams>--device /dev/kfd --device /dev/dri --group-add video --ulimit memlock=-1:-1 --shm-size=2g --stop-timeout 120</ExtraParams>
   <Requires>**amdgpu** kernel driver — Unraid ships it, no driver plugin needed (Linux 6.8+). An RDNA 3 / RDNA 4 / Strix Halo card: RX 7000 series, RX 9000 series, Radeon AI PRO R9700, or Ryzen AI Max — pick the matching **Branch** at install (gfx120x / gfx110x / gfx1151); the RX 6000 series has no image yet. Do not set a memory limit on the container: Strata plans from the server's whole RAM. Do not pin CPUs: the engine sets its own thread affinity.</Requires>
 
   <Config Name="WebUI / API port" Target="8080" Default="8080" Mode="tcp" Description="Chat page, monitor and the API (/v1 for OpenAI clients, the root URL for Anthropic clients)." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
 
-  <Config Name="Data" Target="/data" Default="/mnt/cache/appdata/strata-amd" Mode="rw" Description="The model, the prepared pack, presets, tuning and the API key: tens of GB, the log names the size. Use a direct pool path (/mnt/cache/... or /mnt/POOLNAME/...), not /mnt/user: the engine reads the model files while it runs. Typical space: about 80 GB (IQ3_XXS), 90 GB (IQ3_S); Unsloth files are bigger (UD-IQ4_XS 94 GB, UD-Q4_K_XL 111 GB downloads)." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/strata-amd</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/cache/appdata/strata-amd" Mode="rw" Description="The model, the prepared pack, presets, tuning and the API key: tens of GB, the log names the size. Use a direct pool path (/mnt/cache/... or /mnt/POOLNAME/...), not /mnt/user: the engine reads the model files while it runs. Typical space: about 80 GB (IQ3_XXS), 90 GB (IQ3_S); Unsloth files are bigger (UD-IQ4_XS 94 GB, UD-Q4_K_XL 111 GB downloads). Keep this path stable: pointing it at a new, empty folder starts a full model download again." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/strata-amd</Config>
 
-  <Config Name="GPUs" Target="GPUS" Default="all" Mode="" Description="The cards the engine uses: numbers as the monitor lists them (0, or 0,1 to split the model across both), or all / empty for the engine's choice. Every named card must match the card family of the Branch." Type="Variable" Display="always" Required="true" Mask="false">all</Config>
+  <Config Name="GPUs" Target="GPUS" Default="all" Mode="" Description="The cards the engine uses: numbers as Strata lists them (0, or 0,1 to split the model across two). On a server with several cards, name them explicitly rather than leaving all. Every named card must match the card family of the Branch." Type="Variable" Display="always" Required="true" Mask="false">all</Config>
 
   <Config Name="GPU roles" Target="GPU_ROLES" Default="" Mode="" Description="Advanced, multi-card only: a role for each card, like 1=main,0=helper. main runs the final stage (the answer head; Strata picks the faster card by default), helper shares the model's layers, off leaves the card alone; cards you do not name are off. Not together with GPUs. Empty: Strata chooses." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
@@ -63,7 +75,7 @@ Template and Unraid problems: the Support link. Strata itself: the Project link.
 
   <Config Name="Model family" Target="FAMILY" Default="" Mode="" Description="Empty for the usual one. qwen, swift (thinks shorter) or coder, when the size exists in several families." Type="Variable" Display="always" Required="false" Mask="false"></Config>
 
-  <Config Name="Context length" Target="CONTEXT" Default="32k|64k|128k|256k" Mode="" Description="How much text it remembers at once; longer costs RAM. 128k suits chat; agentic clients (for example Hermes) want 256k." Type="Variable" Display="always" Required="true" Mask="false">128k</Config>
+  <Config Name="Context length" Target="CONTEXT" Default="32k|64k|128k|256k" Mode="" Description="How much text it remembers at once; longer costs RAM. 128k suits chat; agentic clients (for example Hermes) want 256k. The client's configured window must not be larger than this value." Type="Variable" Display="always" Required="true" Mask="false">128k</Config>
 
   <Config Name="Vision" Target="VISION" Default="off|on|gpu|cpu" Mode="" Description="on: the model reads pictures (about 0.9 GB more to download). gpu or cpu choose where the picture reader runs." Type="Variable" Display="always" Required="true" Mask="false">off</Config>
 
@@ -73,12 +85,12 @@ Template and Unraid problems: the Support link. Strata itself: the Project link.
 
   <Config Name="Tune again" Target="RETUNE" Default="0|1" Mode="" Description="1 tunes again on the next start even if this preset is already tuned, for example after an update. Set it back to 0 afterwards." Type="Variable" Display="advanced" Required="true" Mask="false">0</Config>
 
-  <Config Name="Parallel requests" Target="PARALLEL" Default="" Mode="" Description="Requests answered at the same time, 1 to 8; each extra request costs RAM. Empty: fitted to the card." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Parallel requests" Target="PARALLEL" Default="" Mode="" Description="Requests answered at the same time, 1 to 8; each extra request costs RAM. 2 is enough for one chat client plus its helper tasks. Empty: fitted to the card (4 on a two-card test server)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="KV cache type" Target="KV" Default="int8|q4_0|k8v4|fp16" Mode="" Description="Conversation memory format: int8 (default), q4_0 (half the memory), k8v4, fp16." Type="Variable" Display="advanced" Required="true" Mask="false">int8</Config>
 
   <Config Name="Existing model folder" Target="/models" Default="" Mode="ro" Description="Optional: a host folder of GGUF files you already have, mounted read-only at /models. Enter /models in Existing model files below and set Model too; nothing is downloaded for the model itself. Empty: no mount." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Existing model files" Target="MODEL_PATH" Default="" Mode="" Description="GGUF files you already have, as a path inside the container. Add a Path mapping for their folder (read-only is fine), e.g. /models, and enter that here; set Model too. Nothing is downloaded for the model itself." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="Engine settings" Target="STRATA_SET" Default="" Mode="" Description="Advanced engine settings, space separated, like strata launch --set. The most useful one on shared servers: resident-budget-gib=8 caps the experts kept in RAM (Strata otherwise also copies into RAM the experts the cards already hold: about 59 GiB measured on a two-card server, about 23 GiB capped, at about 9% cost on cold prompt speed)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Engine settings" Target="STRATA_SET" Default="" Mode="" Description="Advanced engine settings, space separated, like strata launch --set. The most useful one on a shared server: resident-budget-gib=8 caps the experts kept in RAM that the GPUs do not hold (Strata otherwise also copies into RAM the experts the cards already hold). Measured on two 32 GB cards: about 59 GiB for the container uncapped, about 23 GiB capped, at about 9% cost on cold prompt speed. Suits two or more cards; on a single card see the README. Empty: Strata decides." Type="Variable" Display="always" Required="false" Mask="false"></Config>
 </Container>
