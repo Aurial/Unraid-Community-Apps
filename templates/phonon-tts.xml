@@ -15,6 +15,7 @@
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
+  <ExtraParams>-u 0:0</ExtraParams>
   <Support>https://github.com/Aurial/Unraid-Community-Apps/issues</Support>
   <Project>https://github.com/gradium-ai/xn-ptts</Project>
   <ReadMe>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/README.md</ReadMe>
@@ -37,7 +38,9 @@ Template and Unraid problems: the Support link. Phonon and the server itself: th
   <TemplateURL>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/templates/phonon-tts.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/phonon-icon.png</Icon>
   <License>Apache-2.0</License>
-  <Requires>**No authentication** — the API ports are open to anything that can reach them; run on a trusted network only. The first start downloads the model and voices (well under 1 GB) into the cache folder, which must persist. CPU only: no GPU or driver plugin needed; quantized weights (q8) do not use a GPU even when one is present.</Requires>
+  <Requires>**No authentication** — the API ports are open to anything that can reach them; run on a trusted network only. The first start downloads the model and voices (well under 1 GB) into the cache folder, which must persist. CPU only: no GPU or driver plugin needed; quantized weights (q8) do not use a GPU even when one is present.
+
+Why -u 0:0: the upstream image runs as its built-in phonon user (uid 1000), which cannot write into an appdata folder that Unraid creates automatically on first install - the first start then fails with a permission-denied model download. The template runs the container as root so a fresh install works out of the box; you can change this on the container if you pre-own the cache folder for uid 1000.</Requires>
 
   <Config Name="API port" Target="8880" Default="8880" Mode="tcp" Description="The OpenAI-compatible speech API (POST /v1/audio/speech, GET /v1/audio/voices, GET /health). No authentication — do not expose this port beyond your network." Type="Port" Display="always" Required="true" Mask="false">8880</Config>
 
