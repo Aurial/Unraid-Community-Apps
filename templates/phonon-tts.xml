@@ -25,7 +25,7 @@ Language: PTTS_LANG is required and picks how numbers and symbols are spelled ou
 
 First start: downloads the default model and the voices for its language into the cache folder, and logs little until they load; watch the log. The cache folder keeps them across restarts and updates, so later starts go straight to serving.
 
-Home Assistant: set PTTS_WYOMING_ADDR to 0.0.0.0:10200 and map the Wyoming port too; then add the Wyoming Protocol integration in Home Assistant with this server's address and port 10200.
+Home Assistant: below the form's Add another parameter (ENV, LABEL), click Add Environment Variable, name it PTTS_WYOMING_ADDR with value 0.0.0.0:10200, and map the Wyoming port; then add the Wyoming Protocol integration in Home Assistant with this server's address and port 10200. Wyoming is deliberately not a form field: Unraid passes every form field as an environment variable even when empty, and an empty PTTS_WYOMING_ADDR makes the server try to bind a blank address and exit right after loading the model.
 
 Access: the API has NO authentication on either port. Use it on a network you trust; do not expose it to the internet.
 
@@ -44,7 +44,7 @@ Why -u 0:0: the upstream image runs as its built-in phonon user (uid 1000), whic
 
   <Config Name="API port" Target="8880" Default="8880" Mode="tcp" Description="The OpenAI-compatible speech API (POST /v1/audio/speech, GET /v1/audio/voices, GET /health). No authentication — do not expose this port beyond your network." Type="Port" Display="always" Required="true" Mask="false">8880</Config>
 
-  <Config Name="Wyoming port" Target="10200" Default="10200" Mode="tcp" Description="Home Assistant's Wyoming protocol. Only used when PTTS_WYOMING_ADDR is set below; leave this port empty if you do not use Home Assistant." Type="Port" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Wyoming port" Target="10200" Default="10200" Mode="tcp" Description="Home Assistant's Wyoming protocol. Only useful together with the PTTS_WYOMING_ADDR environment variable (see the Overview); leave this port empty if you do not use Home Assistant." Type="Port" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="Model and voices cache" Target="/home/phonon/.cache/huggingface" Default="/mnt/user/appdata/phonon-tts" Mode="rw" Description="Where the model, voices and any HF downloads live (under about 1 GB). Persists across restarts, template edits and updates; deleting it means re-downloading on the next start." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/phonon-tts</Config>
 
@@ -62,7 +62,6 @@ Why -u 0:0: the upstream image runs as its built-in phonon user (uid 1000), whic
 
   <Config Name="Voice aliases" Target="PTTS_VOICE_ALIAS" Default="" Mode="" Description="Extra names, comma-separated, like nova=VOICE. The named voice must exist or the server does not start." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="Wyoming address" Target="PTTS_WYOMING_ADDR" Default="" Mode="" Description="Set to 0.0.0.0:10200 to also serve Home Assistant's Wyoming protocol (map the Wyoming port above). Home Assistant then lists Phonon as a text-to-speech engine." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="Voice catalog" Target="PTTS_VOICE_CATALOG" Default="" Mode="" Description="Empty: Gradium's public voice catalog (gradium/phonon-voices) for your language. Set to hf://owner/name[@revision], or a path inside the container to your own voices.jsonl, to use different voices." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Voice catalog" Target="PTTS_VOICE_CATALOG" Default="gradium/phonon-voices" Mode="" Description="Default gradium/phonon-voices: serves Gradium's public catalog voices in your language plus the checkpoint's own voice. Leave empty to serve only the checkpoint's own voice (that is not the upstream default). Set to hf://owner/name[@revision], or a path inside the container to your own voices.jsonl, for other voices." Type="Variable" Display="advanced" Required="false" Mask="false">gradium/phonon-voices</Config>
 </Container>
