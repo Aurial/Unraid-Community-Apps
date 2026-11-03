@@ -233,11 +233,22 @@ The template sets `--stop-timeout 120` so a large model has two minutes to unloa
 
 An Unraid Community Applications template for [ptts-openai-server](https://github.com/gradium-ai/xn-ptts/tree/main/ptts-openai-server), the official speech server for **Phonon**, [Gradium](https://gradium.ai/phonon)'s open-weight on-device text-to-speech models. It serves an **OpenAI-compatible API** (`POST /v1/audio/speech`) and the **Wyoming protocol**, so it plugs into Open WebUI, SillyTavern, Home Assistant and anything else with an "OpenAI TTS" setting. It runs fully local, on the CPU only, and fast enough to speak faster than real time even on a Raspberry Pi.
 
-Search for **Phonon TTS** in the Apps tab; the defaults work out of the box: API port `8880`, language `en`, and a model/voices cache (under about 1 GB) downloaded on first start and kept across restarts. The container runs as root (`-u 0:0`): the upstream image's built-in user (uid 1000) cannot write into an appdata folder that Unraid creates on first install, so running as root keeps a fresh install working with no manual setup. The first start logs little until the model loads, so watch the log. For Home Assistant, under **Add another parameter (ENV, LABEL)** add an environment variable named `PTTS_WYOMING_ADDR` with value `0.0.0.0:10200`, map the **Wyoming port**, then add the **Wyoming Protocol** integration pointing at this server. (Wyoming is an added variable rather than a form field on purpose: Unraid passes blank form fields as empty environment variables, and an empty `PTTS_WYOMING_ADDR` makes the server exit right after loading the model. Likewise the **Voice catalog** field ships pre-filled with `gradium/phonon-voices` - leaving it empty would serve only the checkpoint's single default voice.) The template's Overview explains every setting, including other models (`hf://owner/name`), gated 40M checkpoints, voice aliases and OpenAI voice-name compatibility.
+Search for **Phonon TTS** in the Apps tab; the defaults work out of the box: API port `8880`, language `en`, and a model/voices cache (under about 1 GB) downloaded on first start and kept across restarts. The first start logs little until the model loads, so watch the log. For Home Assistant, set **Wyoming address** to `0.0.0.0:10200`, map the **Wyoming port**, then add the **Wyoming Protocol** integration pointing at this server. The template's Overview explains every setting, including other models (`hf://owner/name`), gated 40M checkpoints, voice aliases and OpenAI voice-name compatibility.
 
 > **The server has no authentication on any port.** Run it on a trusted network; never expose it to the internet.
 
 The template follows `latest`, which Gradium moves with each release; pick a pinned tag (such as `0.5.0`) under **Branch** at install to stay on one release.
+
+### Phonon troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The log ends with `Permission denied (os error 13)` while fetching `voices.jsonl` (or the model), and the container exits | The image runs as its own user (uid 1000) and cannot write to the cache folder Unraid created as root. The message suggests a gated repo; here it is a file-permission problem. | Set **Extra Parameters** to `-u 0:0`, or run `chown -R 1000:1000` on the cache folder. Check with `docker inspect Phonon-TTS --format 'user={{.Config.User}}'` (it should print `0:0` for the first fix). |
+| The container exits right after loading the model with `no voice catalog at ...` | A voice catalog set to a bare repo name (`gradium/phonon-voices`) is read as a local path, and an explicitly set catalog must load | Use `hf://gradium/phonon-voices` (it needs no token), or leave the catalog unset. An empty value starts fine but serves only the `default` voice. |
+| `curl` on the API port returns an HTML "404 Not Found" page | Another container already uses that host port. Unraid's UniFi Network Application publishes `8880` and `8080` by default. | Change the host port in the template, then check with `docker port Phonon-TTS` and `ss -ltnp \| grep ':8880 '`. |
+| Home Assistant cannot find the Wyoming server | The Wyoming address needs a port | Set `PTTS_WYOMING_ADDR` to `0.0.0.0:10200` (a bare `0.0.0.0` is not enough) and map port 10200. |
+
+Checked on a working install: `GET /health` returns 200, `GET /v1/audio/voices` lists the voices (38 for English on the default model), and `POST /v1/audio/speech` returns MPEG audio (24 kHz, mono).
 
 ---
 

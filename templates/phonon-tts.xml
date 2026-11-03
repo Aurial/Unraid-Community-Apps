@@ -25,7 +25,13 @@ Language: PTTS_LANG is required and picks how numbers and symbols are spelled ou
 
 First start: downloads the default model and the voices for its language into the cache folder, and logs little until they load; watch the log. The cache folder keeps them across restarts and updates, so later starts go straight to serving.
 
-Home Assistant: below the form's Add another parameter (ENV, LABEL), click Add Environment Variable, name it PTTS_WYOMING_ADDR with value 0.0.0.0:10200, and map the Wyoming port; then add the Wyoming Protocol integration in Home Assistant with this server's address and port 10200. Wyoming is deliberately not a form field: Unraid passes every form field as an environment variable even when empty, and an empty PTTS_WYOMING_ADDR makes the server try to bind a blank address and exit right after loading the model.
+Home Assistant: below the form's Add another parameter (ENV, LABEL), click Add Environment Variable, name it PTTS_WYOMING_ADDR with value 0.0.0.0:10200, and map the Wyoming port; a bare 0.0.0.0 without a port is not enough. Then add the Wyoming Protocol integration in Home Assistant with this server's address and port 10200. Wyoming is deliberately not a form field: Unraid passes every form field as an environment variable even when empty, and an empty PTTS_WYOMING_ADDR makes the server try to bind a blank address and exit right after loading the model.
+
+Voices: by default the server also serves Gradium's public voice catalog. To use another catalog, add a custom variable PTTS_VOICE_CATALOG with hf://owner/name[@revision] or the path of your own voices.jsonl; an explicit catalog must load, or the container exits. The catalog is deliberately not a form field: a bare repo name without hf:// is read as a local path and an explicitly set catalog must load, so a pre-filled field would break installs.
+
+Port 8880 is the default API port and is also used by the UniFi Network Application. If curl returns an HTML 404 page, another container holds the port: change the host port here. Check with docker port Phonon-TTS and ss -ltnp | grep ':8880 '.
+
+If the log ends with "Permission denied (os error 13)", the container cannot write its cache folder: add -u 0:0 under Extra Parameters, or chown the cache folder to 1000:1000. The message about gated repositories is misleading in that case.
 
 Access: the API has NO authentication on either port. Use it on a network you trust; do not expose it to the internet.
 
@@ -61,7 +67,4 @@ Why -u 0:0: the upstream image runs as its built-in phonon user (uid 1000), whic
   <Config Name="OpenAI voice names" Target="PTTS_OPENAI_VOICES" Default="" Mode="" Description="Set to default (or one of your voices) to also accept OpenAI's own voice names (alloy, nova, ...) — handy for clients with a fixed voice list. Empty: only this server's real voices." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="Voice aliases" Target="PTTS_VOICE_ALIAS" Default="" Mode="" Description="Extra names, comma-separated, like nova=VOICE. The named voice must exist or the server does not start." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-
-
-  <Config Name="Voice catalog" Target="PTTS_VOICE_CATALOG" Default="gradium/phonon-voices" Mode="" Description="Default gradium/phonon-voices: serves Gradium's public catalog voices in your language plus the checkpoint's own voice. Leave empty to serve only the checkpoint's own voice (that is not the upstream default). Set to hf://owner/name[@revision], or a path inside the container to your own voices.jsonl, for other voices." Type="Variable" Display="advanced" Required="false" Mask="false">gradium/phonon-voices</Config>
 </Container>
