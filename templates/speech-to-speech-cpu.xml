@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>Speech-To-Speech-CPU</Name>
+  <Repository>ghcr.io/aurial/speech-to-speech-docker:latest</Repository>
+  <Registry>https://ghcr.io/aurial/speech-to-speech-docker</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Aurial/Unraid-Community-Apps/issues</Support>
+  <Project>https://github.com/huggingface/speech-to-speech</Project>
+  <Readme>https://github.com/Aurial/Unraid-Community-Apps#readme</Readme>
+  <TemplateURL>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/templates/speech-to-speech-cpu.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/s2s-icon.png</Icon>
+  <Category>AI:Tools:Utilities</Category>
+  <ExtraSearchTerms>voice stt tts whisper realtime websocket conduit openai speech to speech assistant microphone transcription kokoro cpu</ExtraSearchTerms>
+  <WebUI/>
+
+  <Overview>Speech-To-Speech-CPU runs Hugging Face's open-source realtime voice-agent pipeline (Apache-2.0, 13k+ stars): voice activity detection, speech-to-text (faster-whisper), any OpenAI-compatible LLM as the brain, and Kokoro text-to-speech — served as one OpenAI Realtime WebSocket server. Point any Realtime-API client at it instead of OpenAI's cloud: Conduit's "local listening" (speech server), OpenAI Agents SDK clients, LiveKit, or its own browser demo. This template runs a CPU image built and published by Aurial (upstream ships CUDA-only and no registry image), so it needs no GPU and can run alongside GPU inference servers. It has no web page of its own: it is a backend that apps connect to. Configure the three LLM fields below to point at an existing OpenAI-compatible server (Strata, Radiance, Ollama, LM Studio, …); the key is stored masked, never on the command line. One voice session at a time by default; first start downloads the speech models (a few GB) into the cache folder, then it is warm and CPU-light.</Overview>
+  <Requires>An OpenAI-compatible LLM server reachable over your network (Strata, Radiance, Ollama, etc.) — its URL and key go in the LLM fields below. The pipeline cannot start without it (it warms up the backend before opening the port). First start downloads STT/TTS models into the cache folder: allow 1–2 minutes before the port opens. Nothing else: pure CPU, no GPU flags, no driver plugin.</Requires>
+
+  <Config Name="Realtime port" Target="8765" Default="8765" Mode="tcp" Description="OpenAI Realtime WebSocket endpoint: ws://SERVER:8765/v1/realtime (this is what Conduit's speech server / Realtime clients connect to). Only needs to be reachable from your LAN/tailnet — do not expose it to the internet." Type="Port" Display="always" Mask="false">8765</Config>
+  <Config Name="Models &amp; cache folder" Target="/root/.cache" Default="/mnt/user/appdata/speech-to-speech" Mode="rw" Description="Holds the downloaded speech models (faster-whisper + Kokoro voices, a few GB) and pip/HF caches. Keep it on a fast pool if you have one; without a persistent folder the models re-download on every recreate." Type="Path" Display="always" Mask="false">/mnt/user/appdata/speech-to-speech</Config>
+
+  <Config Name="LLM server URL" Target="S2S_LLM_BASE_URL" Default="" Mode="" Description="Base URL (with /v1) of your OpenAI-compatible LLM server that will act as the brain — e.g. http://192.168.150.32:8180/v1 for Strata or Radiance on this machine. REQUIRED: the pipeline warms this backend up before opening the realtime port." Type="Environment Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="LLM API key" Target="S2S_LLM_API_KEY" Default="" Mode="" Description="API key for the LLM server above (stored masked). Leave empty if your server has no auth. An empty/wrong key here shows up as a 401 in the container log at startup." Type="Environment Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Model name" Target="S2S_LLM_MODEL" Default="" Mode="" Description="The exact model name the LLM server serves (what GET /v1/models reports), e.g. qwen3.8-flash-next-q4. Leave empty to use the server default." Type="Environment Variable" Display="always" Required="false" Mask="false"/>
+
+  <Config Name="STT engine" Target="S2S_STT" Default="faster-whisper" Mode="" Description="Speech-to-text backend. faster-whisper is the tested CPU default; whisper (openai) also works. Run 'speech-to-speech serve -h' in a console for the full list." Type="Environment Variable" Display="advanced" Required="false" Mask="false">faster-whisper</Config>
+  <Config Name="TTS engine" Target="S2S_TTS" Default="kokoro" Mode="" Description="Text-to-speech backend. Kokoro is the tested CPU default (fast, natural). Only used when a client asks the server to speak — Conduit listen-only mode ignores it." Type="Environment Variable" Display="advanced" Required="false" Mask="false">kokoro</Config>
+  <Config Name="Compute device" Target="S2S_DEVICE" Default="cpu" Mode="" Description="Leave cpu. The image ships CPU torch wheels; AMD GPUs are not supported by this pipeline and your GPU is better left to the LLM server." Type="Environment Variable" Display="advanced" Required="false" Mask="false">cpu</Config>
+</Container>

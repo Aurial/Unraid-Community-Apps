@@ -1,6 +1,6 @@
 # Unraid Community Apps templates by Aurial
 
-Three templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server), **Radiance-LLM** (radiance, a modular AMD inference engine serving language, image, video, speech and music models) and **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models).
+Four templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server), **Radiance-LLM** (radiance, a modular AMD inference engine serving language, image, video, speech and music models), **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models) and **Speech-To-Speech-CPU** (Hugging Face's realtime voice-agent pipeline as a self-hosted OpenAI Realtime WebSocket server, CPU-only).
 
 ---
 
@@ -411,6 +411,35 @@ Checked on a working install: `GET /health` returns 200, `GET /v1/audio/voices` 
 
 ---
 
+## Speech-To-Speech-CPU
+
+An Unraid Community Applications template for [speech-to-speech](https://github.com/huggingface/speech-to-speech), Hugging Face's open-source realtime voice-agent pipeline (Apache-2.0). It turns your server into a **self-hosted OpenAI Realtime API server**: one WebSocket on port `8765` (`ws://SERVER:8765/v1/realtime`) carries a whole conversation loop — Silero VAD watches for turn boundaries, faster-whisper transcribes your speech, any OpenAI-compatible LLM you point it at writes the reply, and Kokoro speaks it back. Clients built for OpenAI's Realtime API (Conduit's local-listening voice assistant, OpenAI Agents SDK clients, LiveKit, the upstream browser demo) can point at your box instead of OpenAI's cloud.
+
+**Why "CPU" is in the name:** upstream ships a CUDA-only Dockerfile and publishes no registry image. The image here (`ghcr.io/aurial/speech-to-speech-docker`) is built and published by the template maintainer: same runtime steps as upstream, but on a CPU base with CPU torch wheels — no GPU, no driver plugin, and it happily runs next to your GPU inference servers. Tags track the upstream release (`1.1.0.2` = upstream `1.1.0`, image build 2); `latest` follows the newest tag.
+
+Install needs three fields: **LLM server URL** including `/v1` (e.g. `http://192.168.150.32:8180/v1` for Strata or Radiance on this machine), **LLM API key** (stored masked; handed to the pipeline as an env var, never a command-line argument) and **Model name** exactly as `GET /v1/models` reports it (e.g. `qwen3.8-flash-next-q4`). The advanced fields expose the STT/TTS engines and the compute device; the tested defaults are `faster-whisper`, `kokoro` and `cpu`. First start downloads the whisper and Kokoro models (a few GB) into the cache folder and only opens the realtime port once everything is warm — allow a minute or two. There is no web page: it is a backend that apps connect to.
+
+The CPU pipeline was checked end-to-end on real hardware (voice in → faster-whisper → a Qwen model served by Strata over chat-completions → Kokoro voice out) with exactly the command this image runs from those fields.
+
+### Connecting a client
+
+- **Conduit:** point its speech server (local listening) at `ws://SERVER:8765/v1/realtime`.
+- **OpenAI SDKs:** `base_url="http://SERVER:8765/v1"`, `websocket_base_url="ws://SERVER:8765/v1"`; the API key is ignored.
+- The server implements the core Realtime event subset (server VAD, streaming transcripts and audio, tool calls), not full OpenAI Realtime parity — see upstream's Realtime README for the event matrix.
+
+> **The server has no authentication of its own.** Keep port 8765 on your LAN/tailnet; never expose it to the internet.
+
+### Speech-To-Speech-CPU troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The port never opens and the log stalls early | First start is downloading a few GB of models, or the LLM server is unreachable — the backend is warmed up **before** the port opens | Watch the log; check the URL ends in `/v1` and the LLM server answers `GET /v1/models` |
+| `401` in the container log at startup | Wrong or empty **LLM API key** field | Set the key your LLM server expects; leave it empty only if the server has no auth |
+| Client connects but drops immediately | Wrong URL path | Connect to `ws://SERVER:8765/v1/realtime`, not `/` |
+| Another app can't bind the port | Port clash | Change the host port in the template and point clients at the new port |
+
+---
+
 ## Credits and licence
 
 [Strata](https://github.com/Niko1221/Strata) and its images are by Niko1221 and the Strata contributors, under the MIT licence. The Strata icon is Strata's own. The Strata template follows the structure of the NVIDIA [strata-docker](https://github.com/williamkunz/strata-docker) template by William Kunz (MIT). Quality figures in the model table come from Strata's `docs/QUANTS.md`.
@@ -418,5 +447,7 @@ Checked on a working install: `GET /health` returns 200, `GET /v1/audio/voices` 
 [Phonon](https://gradium.ai/phonon) and the [xn-ptts](https://github.com/gradium-ai/xn-ptts) server are by [Gradium](https://gradium.ai) and contributors, Apache-2.0; the models themselves carry their own licences on Hugging Face (the 31M models are Apache-2.0; the 40M models are gated, so check their model cards). The Phonon icon in this repository is an original work by the template maintainer, MIT.
 
 [radiance](https://codeberg.org/StillDeadcode/radiance) is by [StillDeadcode](https://codeberg.org/StillDeadcode), Apache-2.0; the `stilldeadcode/radiance` image is the upstream's, and model packs are downloaded separately from Hugging Face under their own licences. The Radiance icon in this repository is an original work by the template maintainer, MIT (no official radiance icon is published).
+
+[speech-to-speech](https://github.com/huggingface/speech-to-speech) is by Hugging Face and contributors, Apache-2.0; the models it downloads at runtime (Whisper, Kokoro voices) carry their own licences. The CPU image in [speech-to-speech-docker](https://github.com/Aurial/speech-to-speech-docker) and its icon in this repository are original works by the template maintainer, MIT; the project is not affiliated with Hugging Face.
 
 This repository is MIT licensed; see [LICENSE](LICENSE).
