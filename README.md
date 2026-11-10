@@ -1,6 +1,6 @@
 # Unraid Community Apps templates by Aurial
 
-Two templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server) and **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models).
+Three templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server), **Radiance** (a modular AMD inference engine serving language, image, video, speech and music models) and **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models).
 
 ---
 
@@ -229,6 +229,165 @@ The template sets `--stop-timeout 120` so a large model has two minutes to unloa
 
 ---
 
+## Radiance
+
+An Unraid Community Applications template for **radiance**, a modular inference engine for AMD GPUs by [StillDeadcode](https://codeberg.org/StillDeadcode/radiance) (Apache-2.0). One server, one card or several, speaks the **OpenAI** (chat, completions, Responses, images, audio, videos), **Anthropic Messages** and **llama-server** APIs, so their clients and SDKs work unchanged — and it does more than chat: language models plus image, video, speech and music generation, with a live dashboard at the root URL.
+
+The template runs the official image, `stilldeadcode/radiance`. Report template or Unraid problems in this repository's [issues](https://github.com/Aurial/Unraid-Community-Apps/issues), and problems with radiance itself to the [radiance project](https://codeberg.org/StillDeadcode/radiance/issues).
+
+> **About the numbers on this page.** Everything marked *measured* was measured on one server: two Radeon AI PRO R9700 (32 GB each), an Intel i5-13600K, 94 GiB DDR5-4800, an XFS NVMe cache pool, Unraid, with about 60 other containers running. Your numbers will differ. Figures credited to radiance come from its own docs and compose files. Only the RDNA4 (gfx1201) target has been run by the template author; the RDNA3 and Strix Halo kernels ship in the same image but are untested here.
+
+### How this differs from Strata AMD
+
+Both templates on this page run large Qwen models on AMD cards and both serve OpenAI-compatible APIs, but they are different engines with different model formats and cannot share files. **Strata** streams a mixture-of-experts model from system RAM (GGUF packs, ~80 GB download, tens of GB of RAM budget to tune) and adds a chat page and monitor. **Radiance** uses its own `.rad` model packs, keeps the model on the cards (host memory is a tier, not the primary store), is a smaller and faster-starting engine built for AMD, and covers image/video/speech/music generation as well as text. Pick by model and features, not by name; several people run both.
+
+---
+
+### Before you install
+
+1. **A supported card.** The image's bundled kernels cover **RDNA 4** (RX 9000 series, Radeon AI PRO R9700), **RDNA 3** (RX 7000 series) and **Ryzen AI Max** (Strix Halo). The engine starts on any AMD family, but another card needs a kernel plugin ([radiance docs](https://codeberg.org/StillDeadcode/radiance/src/tag/v1.17.0/docs/PLUGIN.md)). The host needs only the `amdgpu` kernel driver Unraid ships — no ROCm, no compiler, no driver plugin.
+2. **Resizable BAR** (Above 4G Decoding) on in the firmware. Without it the engine keeps kernel arguments in pinned host memory and reads them over the PCIe link on every dispatch.
+3. **Room on an SSD pool for the model packs** (table below), as a **direct pool path** (`/mnt/cache/...` or `/mnt/POOLNAME/...`), never `/mnt/user`: the engine reads models by direct I/O while serving, and Qwen3.8-Flash-Next streams its n-gram table from the folder.
+4. **Enough RAM for one-card Flash-Next** — that profile pins about 49 GiB of host memory (upstream's figure; it expects a 64 GB host). Every other single-card model on this page keeps its weights on the card and needs little beyond headroom.
+5. **One model at a time.** The engine fills the cards on purpose. Stop other GPU containers (transcoders, other LLM servers) first.
+6. **An API key ready** — see [The API key](#the-api-key-never-auto-generated). This engine refuses to start without one.
+
+### Install
+
+Apps tab, search **Radiance**, click Install. The fields that matter:
+
+| Field | What to enter | Notes |
+|---|---|---|
+| Branch / Repository | `1.17.0` (default) or `latest` | Pin a version once tuned; see [Updating](#updating-and-pinning-1). |
+| WebUI / API port | `8180` or another free port | The engine listens on 8000 inside the container; this is the host port. 8080 and 8000 are commonly taken on Unraid. |
+| Models | `/mnt/cache/appdata/radiance/models` | The folder you put the `.rad` packs in, mounted read-only at `/models`. |
+| API key | `openssl rand -hex 24` | Required; the server will not start without it. |
+| Post Arguments | see below | The whole engine command line lives here. The default is safe for one card. |
+
+Download a model into the Models folder (from a shell):
+
+```
+wget -P /mnt/cache/appdata/radiance/models https://huggingface.co/StillDeadcode/qwen3.8-27b-mxfp4/resolve/main/qwen3.8-27b-mxfp4.rad
+```
+
+Then put its exact filename after `/models/` in **Post Arguments**. Advanced: to pin a one-card model to a specific card on a multi-card box, use the form's *Add another parameter (ENV)* mechanism with `RADIANCE_GPU=0` — the template deliberately ships no empty row for it.
+
+### Choosing a model
+
+Sizes are upstream's. All fit **one 32 GB card** unless noted; vision and generation models are served by the same engine.
+
+| Model pack | Size | Notes |
+|---|---|---|
+| `qwen3.8-27b-mxfp4.rad` | 19 GiB | The single-card default: 27B dense, MXFP4, DFlash2 drafter, vision. |
+| `qwen3.8-27b-iq2r-v4.rad` … `iq8r-v4.rad` | 10–28 GiB | Same model, pick a size that leaves room for your context. |
+| `qwen3.8-27b-fp8.rad` | 29 GiB | Highest quality the dense line ships; tight on 32 GB with a big context. |
+| `qwen3.6-35b-a3b-fp8.rad` / `ornith-1.5-35b-a3b-w4a8.rad` | 35 / 20 GiB | MoE, MTP; the w4a8 Ornith fits one card. |
+| `qwen3.8-next-flash-fp8-iq4r-moe.rad` | 114 GiB | The flagship MoE. Two cards are its home profile; the one-card profile pins ~49 GiB of host RAM (upstream's numbers: ~2,545 tok/s prefill of 26K prompts at 4096-token steps, decode step 28.0 ms at one sequence). |
+| Image / video / speech / music packs | 3–62 GiB | Flux 3 Klein 9.3 GiB, Krea 2 16 GiB, Breeze TTS 5.5 GiB, LTX-2.5 video 37 GiB and more — see the [upstream README table](https://codeberg.org/StillDeadcode/radiance#models). |
+
+### Launch options (Post Arguments)
+
+Everything after the image name goes to the engine. The template default is
+
+```
+--model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY
+```
+
+which is one card, engine defaults everywhere else. What the useful flags do, with single-card advice first and two-card recommendations after:
+
+| Flag | What it does |
+|---|---|
+| `--model PATH` | The `.rad` pack to serve. The only required flag. Path is inside the container, so your Models folder is `/models`. |
+| `--api-key-env NAME` | Read the API key from environment variable `NAME`. Kept out of the command line, where every process on the host could read it. An empty or unset variable **refuses startup** — that is fail-closed working, not a bug. |
+| `--host ADDR` / `--port N` | Listen address (default `0.0.0.0`) and port (default 8000). Keep the port equal to the container side of your port mapping; usually leave both alone. |
+| `--tp N` | Tensor parallelism: how many cards split the model. One card: omit it (or `1`). Two cards: `--tp 2`. It adds capacity more than speed; decode barely changes when the model already fits one card. *Measured two R9700: prose decode 137–170 tok/s at `--tp 2` with Flash-Next.* |
+| `--tp-wire W` | How the ranks exchange (two cards). `wht6` is the wide wire; upstream's production Flash-Next profile uses it. Harmless at `--tp 1`, so the template does not carry it. |
+| `--max-num-seqs N` | Sequences (requests) decoded together. Each costs KV cache. One card with a big model: `2` to `4`. Two cards running Flash-Next: `4` to `8` (upstream production: 8). |
+| `--max-model-len N` | The context window, in tokens. Agents that keep long tool histories want `200000` or `262144`; the client's own configured window must not exceed it. Context is carved from VRAM: lower it to fit more sequences. |
+| `--kv-cache-dtype fp8` | Conversation memory at 8-bit float: roughly halves KV RAM for a quality change nobody notices in chat. Upstream ships it in every production profile. |
+| `--placement expert_tiered` | MoE models only: experts the cards cannot hold go to a pinned host pool instead of being re-read from disk every token. Two cards: always worth it. One card with Flash-Next: keep it and set the pool below. |
+| `--host-pool-mib N` | Size of that pinned host pool (MiB). Upstream: 12288 for two cards on Flash-Next; **43000** for one card (that is the ~49 GiB pin). Leave empty/absent on dense models that fit the card. |
+| `--gpu-headroom-mib N` | VRAM to leave free per card. `96` is upstream's; leave it unless another process shares the card. |
+| `--ngram-placement disk` | Flash-Next only: stream the n-gram embedding table from the model file (needs the fast pool and unconfined seccomp). `ram` would lock 47.7 GiB in RAM. |
+| `--prefix-cache-mib N` | Finished conversations kept in host memory so repeat prompts skip prefill. Upstream: `4096`. *Measured: a 101,111-token prompt answered with 90,112 tokens already cached, time to first token 2.5 s.* |
+| `--num-speculative-tokens N` | MTP drafter depth: predict N tokens per step and verify in parallel. `3` is upstream's production value; it is most of the reason decode is as fast as it is on models that ship a drafter. |
+| `--max-num-batched-tokens N` | Prefill chunk per step. `2048` is the general default; upstream raises it to `4096` for one-card Flash-Next because prefill there is PCIe-link-bound and a bigger step amortises expert copies (2,545 vs 1,413 tok/s on 26K prompts, upstream's measurement). With 4096 steps also set `--checkpoint-interval 4096` so a prefill chunk never straddles a checkpoint. |
+| `--served-model-name NAME` | The model id `/v1/models` advertises. Cosmetic; set it if a client insists on a particular name. |
+
+**Two-card recommended (measured on the author's server, Qwen3.8-Flash-Next):**
+
+```
+--model /models/qwen3.8-next-flash-fp8-iq4r-moe.rad --api-key-env RADIANCE_API_KEY --tp 2 --tp-wire wht6 --max-num-seqs 4 --max-model-len 262144 --placement expert_tiered --host-pool-mib 12288 --gpu-headroom-mib 96 --kv-cache-dtype fp8 --prefix-cache-mib 4096 --ngram-placement disk --num-speculative-tokens 3 --max-num-batched-tokens 2048
+```
+
+This is the upstream production profile (`deploy/compose/flashnext.yaml`) with a 262144-token window and 4 slots instead of upstream's 200000/8, because the author's box serves one agentic client with a large window. Raise `--max-num-seqs` toward 8 when several clients share the server.
+
+**Two-card recommended (dense 27B, most users' starting point):**
+
+```
+--model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY --tp 2 --max-model-len 262144 --kv-cache-dtype fp8 --num-speculative-tokens 3
+```
+
+### The API key (never auto-generated)
+
+Unlike some servers, radiance **never creates a key for you** and never writes one to disk. Every request except `/health`, `/ping` and the dashboard must carry `Authorization: Bearer KEY` (or `X-Api-Key: KEY`), and **the server refuses to start if the key variable is empty** — so a blank API key field is an immediate, deliberate failure, not a silent open server. Make a key:
+
+```
+openssl rand -hex 24
+```
+
+Without any key flag at all the server runs open on the LAN, with `/diagnostics` and the admin routes restricted to loopback clients. On a trusted network that is a choice; never expose an open server to the internet.
+
+### First start, logs, stopping
+
+Loading a 19 GiB pack takes about a minute on an NVMe pool; the flagship 114 GiB pack takes longer, so give the container a few minutes before judging. The log prints a startup report and ends with the server listening.
+
+```
+docker logs -f Radiance                                   # startup report and per-request lines
+curl -s -o /dev/null -w "%{http_code}\n" http://SERVER-IP:8180/health   # 200 when serving
+curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/v1/models  # the served model name
+curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/diagnostics | head -40   # the startup report as JSON
+```
+
+`GET /` opens the live dashboard (requests, cache, tokens per second). `/metrics` speaks Prometheus. The image is a `FROM scratch` rootfs: the only shell is busybox (`docker exec -it Radiance sh`), and there is no package manager by design.
+
+On stop the engine finishes the step in flight and releases the cards; the template's `--stop-timeout 120` gives it room (Docker's 10 s default kills it mid-unload, exit 137).
+
+### Performance reference (measured)
+
+Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0, the two-card line above, serving live agent traffic (from the container's own request log over ~30 minutes):
+
+| Test | Result |
+|---|---|
+| Decode, mixed tool-call traffic | about 137 to 170 tok/s (a short cached request peaked at 228) |
+| Time to first token, warm prefix cache | 0.4 to 1.6 s |
+| Cold 130,008-token prompt | 14.3 s total, TTFT 2.7 s, 144.5 tok/s |
+| Prefix cache on a 101k-token agentic prompt | 90,112 of 101,111 tokens served from cache |
+
+### Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| Exits at once with a message about the api key | The API key field is empty; the engine fails closed by design | Put a key in the API key field (`openssl rand -hex 24`). |
+| Exits with an unknown-option error mentioning an older version's flags | Branch moved, or a flag was mistyped | Check the flag list against the docs of **your** tag; pin `1.17.0`. |
+| Model file not found | Filename in Post Arguments does not match the pack in the Models folder exactly | `ls` the folder; copy the exact name after `/models/`. |
+| Flash-Next cannot serve / stalls reading the model | Mounted over `/mnt/user` (fuse), or Docker's default seccomp | Models must live on a direct pool path; keep `--security-opt seccomp=unconfined` in Extra Parameters. |
+| `401 authentication_error` from a client | Missing or wrong key | Send `Authorization: Bearer KEY` (also accepted: `X-Api-Key`). |
+| Client fails near a token count | The container's `--max-model-len` is smaller than the client's configured window | Raise the flag or lower the client's window; they must agree. |
+| Port shows another app's UI | Host port already taken (UniFi takes 8080; Grafana 3000) | Change the host port. |
+| Card hangs / engine refuses to serve at startup | Compute wave save/restore disabled (`amdgpu.cwsr_enable=0`) | It is the driver default on; if it was changed, restore it (or `--proceed-with-incompatible-configuration`, unsupported). |
+| Another GPU container fails after installing Radiance | Radiance fills the cards by design | Run one LLM server at a time; `docker stop` the other. |
+
+### Updating and pinning
+
+`latest` follows each release. To stay put, keep the pinned tag under Branch. Releases move fast and occasionally rename flags, so after any engine update re-run a long prompt and a short chat before trusting it. Check a tag exists before pinning:
+
+```
+docker manifest inspect stilldeadcode/radiance:1.17.0 >/dev/null && echo exists
+```
+
+---
+
 ## Phonon TTS
 
 An Unraid Community Applications template for [ptts-openai-server](https://github.com/gradium-ai/xn-ptts/tree/main/ptts-openai-server), the official speech server for **Phonon**, [Gradium](https://gradium.ai/phonon)'s open-weight on-device text-to-speech models. It serves an **OpenAI-compatible API** (`POST /v1/audio/speech`) and the **Wyoming protocol**, so it plugs into Open WebUI, SillyTavern, Home Assistant and anything else with an "OpenAI TTS" setting. It runs fully local, on the CPU only, and fast enough to speak faster than real time even on a Raspberry Pi.
@@ -257,5 +416,7 @@ Checked on a working install: `GET /health` returns 200, `GET /v1/audio/voices` 
 [Strata](https://github.com/Niko1221/Strata) and its images are by Niko1221 and the Strata contributors, under the MIT licence. The Strata icon is Strata's own. The Strata template follows the structure of the NVIDIA [strata-docker](https://github.com/williamkunz/strata-docker) template by William Kunz (MIT). Quality figures in the model table come from Strata's `docs/QUANTS.md`.
 
 [Phonon](https://gradium.ai/phonon) and the [xn-ptts](https://github.com/gradium-ai/xn-ptts) server are by [Gradium](https://gradium.ai) and contributors, Apache-2.0; the models themselves carry their own licences on Hugging Face (the 31M models are Apache-2.0; the 40M models are gated, so check their model cards). The Phonon icon in this repository is an original work by the template maintainer, MIT.
+
+[radiance](https://codeberg.org/StillDeadcode/radiance) is by [StillDeadcode](https://codeberg.org/StillDeadcode), Apache-2.0; the `stilldeadcode/radiance` image is the upstream's, and model packs are downloaded separately from Hugging Face under their own licences. The Radiance icon in this repository is an original work by the template maintainer, MIT (no official radiance icon is published).
 
 This repository is MIT licensed; see [LICENSE](LICENSE).

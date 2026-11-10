@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Radiance</Name>
+  <!-- The published radiance image. Its bundled kernels target RDNA4 (gfx1201: RX 9000,
+       Radeon AI PRO R9700), RDNA3 (gfx11-generic: RX 7000) and Strix Halo (gfx1151).
+       The engine itself starts on any AMD GPU family; another card needs a kernel plugin
+       (see the README). Pin a version tag once your setup is tuned. -->
+  <Repository>stilldeadcode/radiance:1.17.0</Repository>
+  <Registry>https://hub.docker.com/r/stilldeadcode/radiance</Registry>
+  <Branch>
+    <Tag>1.17.0</Tag>
+    <TagDescription>Pinned release (recommended)</TagDescription>
+  </Branch>
+  <Branch>
+    <Tag>latest</Tag>
+    <TagDescription>Follows the latest release</TagDescription>
+  </Branch>
+  <Branch>
+    <Tag>1.16.0</Tag>
+    <TagDescription>Previous release</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Aurial/Unraid-Community-Apps/issues</Support>
+  <Project>https://codeberg.org/StillDeadcode/radiance</Project>
+  <ReadMe>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/README.md</ReadMe>
+  <Overview>Radiance is a modular inference engine for AMD GPUs: it serves language models (OpenAI chat/completions/Responses, Anthropic Messages and llama-server APIs, so their clients work unchanged) plus image, video, speech and music generation from one server, and ships a live dashboard at the root URL. This template runs the official image, stilldeadcode/radiance, Apache-2.0, maintained by StillDeadcode (Codeberg).
+
+Requirements: the amdgpu kernel driver, which Unraid ships as standard (Linux 6.8+), and an RDNA 3 / RDNA 4 / Ryzen AI Max card: RX 9000 series and Radeon AI PRO R9700 (RDNA4), RX 7000 series (RDNA3) or Strix Halo. The host needs no ROCm, no compiler, no driver plugin. Resizable BAR (Above 4G Decoding) should be on in the firmware. Model files must sit on a fast local pool (ext4/XFS/btrfs, e.g. /mnt/cache/...), never /mnt/user: the engine reads the model by direct I/O while it serves. Do not set a container memory limit.
+
+Models are .rad packs the author publishes on Hugging Face: qwen3.8-27b-mxfp4.rad (19 GiB) or qwen3.8-27b-fp8.rad (29 GiB) are the natural single-card starting points; Qwen3.8-Flash-Next (114 GiB) is the flagship MoE and wants two cards (a one-card profile exists but pins about 49 GiB of host RAM). Download one into the Models folder, then set its exact filename after the /models/ in Post Arguments.
+
+API key: unlike some servers this one NEVER generates a key. Every request but /health, /ping and the dashboard needs Authorization: Bearer KEY (or X-Api-Key), and the server REFUSES TO START if the key variable is empty (fail closed). Generate one with: openssl rand -hex 24. To run keyless on a trusted network, delete the api-key-env flag from Post Arguments.
+
+Launch flags: the Post Arguments field holds the engine command line; it starts safe for one card. The README explains every flag (tp, placement, host pool, kv cache, speculation, batch sizes) with single- and two-card recommendations measured on a live two-R9700 box.
+
+Template and Unraid problems: the Support link. Radiance itself: the Project link.</Overview>
+  <Category>AI:</Category>
+  <ExtraSearchTerms>llm qwen local ai openai anthropic api inference chat amd rocm radeon rdna gpu image generation video speech music dashboard rad flashnext mxfp4 moe speculative decoding</ExtraSearchTerms>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/templates/radiance.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/radiance-icon.png</Icon>
+  <License>Apache-2.0</License>
+  <!-- From the upstream DOCKER.md, adapted to Unraid: /dev/kfd and /dev/dri give the
+       container the cards. Unraid's /etc/group has no render group, so the docs' render
+       group is omitted; adding it fails container creation. The video group resolves and
+       the device passthrough carries the access. memlock must be unlimited for the pinned
+       host pools. seccomp must be unconfined because Docker's default profile refuses the
+       io_uring and NUMA binding calls the engine and the ROCm runtime make. stop-timeout
+       lets the engine finish its step and release the cards on stop (Docker's default 10 s
+       kills it). Upstream also passes an init as PID 1; Unraid containers have no shell to install an
+       init into, so the engine itself is PID 1 and handles SIGTERM, which the timeout
+       covers. No shm-size: upstream's compose files do not set one. -->
+  <ExtraParams>--device /dev/kfd --device /dev/dri --group-add video --ulimit memlock=-1:-1 --security-opt seccomp=unconfined --stop-timeout 120</ExtraParams>
+  <PostArgs>--model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY</PostArgs>
+  <Requires>**amdgpu** kernel driver, which Unraid ships (Linux 6.8+): no driver plugin, no host ROCm. An RDNA 3 / RDNA 4 / Ryzen AI Max card (RX 7000, RX 9000, Radeon AI PRO R9700, Strix Halo); other AMD cards need a kernel plugin (see README). Enable **Resizable BAR** / Above 4G Decoding in the firmware. The Models folder must be on a fast local pool with direct I/O (ext4/XFS/btrfs, e.g. /mnt/cache/...), not /mnt/user. The container runs **seccomp unconfined**: Docker's default profile blocks io_uring and the NUMA calls radiance needs, and without it models that stream from disk cannot serve. Do not set a memory limit. One model at a time: the engine fills the cards on purpose; stop other GPU workloads first.</Requires>
+
+  <Config Name="WebUI / API port" Target="8000" Default="8180" Mode="tcp" Description="Dashboard, the API (/v1 chat, completions, Responses, images, audio, videos; the root URL answers Anthropic clients) and the probes (/health, /ping). The engine listens on 8000 inside the container unless you change the port flag in Post Arguments; keep this host port and that flag in step." Type="Port" Display="always" Required="true" Mask="false">8180</Config>
+
+  <Config Name="Models" Target="/models" Default="/mnt/cache/appdata/radiance/models" Mode="ro" Description="Folder holding the .rad model packs, mounted read-only at /models. Sizes: 19 GiB (27B MXFP4), 29 GiB (27B FP8), 35 GiB (35B MoE), up to 114 GiB (Qwen3.8-Flash-Next). Must be a fast local pool path (/mnt/cache/... or /mnt/POOLNAME/...), never /mnt/user: the engine reads models by direct I/O while serving, and Flash-Next streams its n-gram table from this folder. Download packs from Hugging Face (links in the README) with wget or the Users Files browser." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/radiance/models</Config>
+
+  <Config Name="API key" Target="RADIANCE_API_KEY" Default="" Mode="" Description="Required. Make one with: openssl rand -hex 24. The key reaches the engine through this environment variable (the api-key-env flag in Post Arguments), never the command line, where every process on the host could read it. The server REFUSES TO START with this field empty: it never generates or stores a key of its own. Clients send it as Authorization: Bearer KEY or X-Api-Key; /health, /ping and the dashboard need no key. To run without authentication on a trusted network, remove the api-key-env flag from Post Arguments." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+</Container>
