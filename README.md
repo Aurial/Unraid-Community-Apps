@@ -1,6 +1,6 @@
 # Unraid Community Apps templates by Aurial
 
-Three templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server), **Radiance** (a modular AMD inference engine serving language, image, video, speech and music models) and **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models).
+Three templates live in this repository: **Strata AMD** (the AMD/ROCm builds of Strata, a local LLM server), **Radiance-LLM** (radiance, a modular AMD inference engine serving language, image, video, speech and music models) and **Phonon TTS** (the official speech server for Gradium's Phonon text-to-speech models).
 
 ---
 
@@ -229,7 +229,7 @@ The template sets `--stop-timeout 120` so a large model has two minutes to unloa
 
 ---
 
-## Radiance
+## Radiance-LLM
 
 An Unraid Community Applications template for **radiance**, a modular inference engine for AMD GPUs by [StillDeadcode](https://codeberg.org/StillDeadcode/radiance) (Apache-2.0). One server, one card or several, speaks the **OpenAI** (chat, completions, Responses, images, audio, videos), **Anthropic Messages** and **llama-server** APIs, so their clients and SDKs work unchanged — and it does more than chat: language models plus image, video, speech and music generation, with a live dashboard at the root URL.
 
@@ -254,7 +254,7 @@ Both templates on this page run large Qwen models on AMD cards and both serve Op
 
 ### Install
 
-Apps tab, search **Radiance**, click Install. The fields that matter:
+Apps tab, search **Radiance-LLM**, click Install. The fields that matter:
 
 | Field | What to enter | Notes |
 |---|---|---|
@@ -343,13 +343,13 @@ Without any key flag at all the server runs open on the LAN, with `/diagnostics`
 Loading a 19 GiB pack takes about a minute on an NVMe pool; the flagship 114 GiB pack takes longer, so give the container a few minutes before judging. The log prints a startup report and ends with the server listening.
 
 ```
-docker logs -f Radiance                                   # startup report and per-request lines
+docker logs -f Radiance-LLM                               # startup report and per-request lines
 curl -s -o /dev/null -w "%{http_code}\n" http://SERVER-IP:8180/health   # 200 when serving
 curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/v1/models  # the served model name
 curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/diagnostics | head -40   # the startup report as JSON
 ```
 
-`GET /` opens the live dashboard (requests, cache, tokens per second). `/metrics` speaks Prometheus. The image is a `FROM scratch` rootfs: the only shell is busybox (`docker exec -it Radiance sh`), and there is no package manager by design.
+`GET /` opens the live dashboard (requests, cache, tokens per second). `/metrics` speaks Prometheus. The image is a `FROM scratch` rootfs: the only shell is busybox (`docker exec -it Radiance-LLM sh`), and there is no package manager by design.
 
 On stop the engine finishes the step in flight and releases the cards; the template's `--stop-timeout 120` gives it room (Docker's 10 s default kills it mid-unload, exit 137).
 
@@ -376,7 +376,7 @@ Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0, the two-card li
 | Client fails near a token count | The container's `--max-model-len` is smaller than the client's configured window | Raise the flag or lower the client's window; they must agree. |
 | Port shows another app's UI | Host port already taken (UniFi takes 8080; Grafana 3000) | Change the host port. |
 | Card hangs / engine refuses to serve at startup | Compute wave save/restore disabled (`amdgpu.cwsr_enable=0`) | It is the driver default on; if it was changed, restore it (or `--proceed-with-incompatible-configuration`, unsupported). |
-| Another GPU container fails after installing Radiance | Radiance fills the cards by design | Run one LLM server at a time; `docker stop` the other. |
+| Another GPU container fails after installing this app | Radiance fills the cards on purpose | Run one LLM server at a time; `docker stop` the other. |
 
 ### Updating and pinning
 

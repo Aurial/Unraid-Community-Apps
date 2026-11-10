@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>Radiance</Name>
+  <Name>Radiance-LLM</Name>
   <!-- The published radiance image. Its bundled kernels target RDNA4 (gfx1201: RX 9000,
        Radeon AI PRO R9700), RDNA3 (gfx11-generic: RX 7000) and Strix Halo (gfx1151).
        The engine itself starts on any AMD GPU family; another card needs a kernel plugin
