@@ -377,7 +377,7 @@ Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0, the two-card li
 | Port shows another app's UI | Host port already taken (UniFi takes 8080; Grafana 3000) | Change the host port. |
 | Card hangs / engine refuses to serve at startup | Compute wave save/restore disabled (`amdgpu.cwsr_enable=0`) | It is the driver default on; if it was changed, restore it (or `--proceed-with-incompatible-configuration`, unsupported). |
 | Another GPU container fails after installing this app | Radiance fills the cards on purpose | Run one LLM server at a time; `docker stop` the other. |
-| Container runs, but Unraid's Ports column is empty and nothing answers the host port | The port mapping did not survive container creation (seen on Unraid 7.4 when the form was edited after a failed create; the built-in bridge itself worked for other containers, so the cause was not pinned down) | Edit the container and make sure the port row reads 8180 \u2192 8000 and Apply; if the host port still never listens, switch the container to a custom Docker network \u2014 that is what restored it on the author's Unraid 7.4 host. |
+| Container runs, but Unraid's Ports column is empty and nothing answers the host port | The port mapping did not survive container creation (seen on Unraid 7.4 when the form was edited after a failed create; the built-in bridge itself worked for other containers, so the cause was not pinned down) | Edit the container and make sure the port row reads 8180 -> 8000 and Apply; if the host port still never listens, switch the container to a custom Docker network - that is what restored it on the author's Unraid 7.4 host. |
 
 ### Updating and pinning
 
