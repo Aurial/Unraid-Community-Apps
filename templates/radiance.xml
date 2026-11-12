@@ -43,16 +43,19 @@ Template and Unraid problems: the Support link. Radiance itself: the Project lin
   <Icon>https://raw.githubusercontent.com/Aurial/Unraid-Community-Apps/main/radiance-icon.png</Icon>
   <License>Apache-2.0</License>
   <!-- From the upstream DOCKER.md, adapted to Unraid: /dev/kfd and /dev/dri give the
-       container the cards. Unraid's /etc/group has no render group, so the docs' render
-       group is omitted; adding it fails container creation. The video group resolves and
-       the device passthrough carries the access. memlock must be unlimited for the pinned
+       container the cards. The container runs as root, so the device passthrough carries
+       the access; add no group-add flags here. Group names in docker's group-add option
+       resolve against the IMAGE's own /etc/group, and this minimal image has neither
+       video nor render, so adding a video (or render) group fails container creation
+       with "unable to find group".
+       memlock must be unlimited for the pinned
        host pools. seccomp must be unconfined because Docker's default profile refuses the
        io_uring and NUMA binding calls the engine and the ROCm runtime make. stop-timeout
        lets the engine finish its step and release the cards on stop (Docker's default 10 s
        kills it). Upstream also passes an init as PID 1; Unraid containers have no shell to install an
        init into, so the engine itself is PID 1 and handles SIGTERM, which the timeout
        covers. No shm-size: upstream's compose files do not set one. -->
-  <ExtraParams>--device /dev/kfd --device /dev/dri --group-add video --ulimit memlock=-1:-1 --security-opt seccomp=unconfined --stop-timeout 120</ExtraParams>
+  <ExtraParams>--device /dev/kfd --device /dev/dri --ulimit memlock=-1:-1 --security-opt seccomp=unconfined --stop-timeout 120</ExtraParams>
   <PostArgs>--model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY</PostArgs>
   <Requires>**amdgpu** kernel driver, which Unraid ships (Linux 6.8+): no driver plugin, no host ROCm. An RDNA 3 / RDNA 4 / Ryzen AI Max card (RX 7000, RX 9000, Radeon AI PRO R9700, Strix Halo); other AMD cards need a kernel plugin (see README). Enable **Resizable BAR** / Above 4G Decoding in the firmware. The Models folder must be on a fast local pool with direct I/O (ext4/XFS/btrfs, e.g. /mnt/cache/...), not /mnt/user. The container runs **seccomp unconfined**: Docker's default profile blocks io_uring and the NUMA calls radiance needs, and without it models that stream from disk cannot serve. Do not set a memory limit. One model at a time: the engine fills the cards on purpose; stop other GPU workloads first.</Requires>
 
