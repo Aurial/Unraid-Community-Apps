@@ -112,7 +112,7 @@ With several cards Strata splits the model's layers across them ("layer split").
 Longer context costs RAM and VRAM. `128k` suits chat. Agent clients that keep long tool histories (for example Hermes) want `256k`. **The client's configured window must not exceed the value here**: a client that believes it has 262,144 tokens against a container set to 128k fails near 128,000 tokens. Check what the server really has:
 
 ```
-curl -s -H "Authorization: Bearer YOUR-KEY" http://SERVER-IP:PORT/v1/models
+curl -s -H "Authorization: Bearer ***" http://SERVER-IP:PORT/v1/models
 ```
 
 `meta.n_ctx` is the window (`262144` for `256k`).
@@ -164,7 +164,7 @@ Earlier measurements, IQ3_XXS on engine 0.1.48 (older), for scale: a cold 122,00
 
 - **OpenAI-compatible apps:** base URL `http://SERVER-IP:PORT/v1`, API key = your key, model name from `GET /v1/models`.
 - **Anthropic-compatible apps** (such as Claude Code): base URL `http://SERVER-IP:PORT` (no `/v1`), same key.
-- Every request must send `Authorization: Bearer KEY`; `GET /health` answers without one, `GET /v1/models` does not.
+- Every request must send `Authorization: Bearer *** `GET /health` answers without one, `GET /v1/models` does not.
 - In our testing the server also answered requests that used a different model name than the one it reports; do not rely on that. Use the name from `/v1/models`.
 - `docker exec Strata-AMD strata connect opencode` writes the settings file for several coding apps and prints it.
 
@@ -218,7 +218,7 @@ The template sets `--stop-timeout 120` so a large model has two minutes to unloa
 | The server's free RAM collapses after install | The default copies experts into RAM too | Set Engine settings to `resident-budget-gib=8` (two cards) and Parallel requests to `2`, Apply. |
 | It downloads the whole model again after you edit the template | The Data path changed to a new empty folder | Put Data back, or copy the old folder across. |
 | Much slower than expected on a multi-GPU server | Cards not named, or the server restarted cold | Set GPUs to `0,1`, restart, and compare again. Check VRAM on both cards (`/sys/class/drm/card*/device/mem_info_vram_used`). |
-| `401 Unauthorized` from a client | The key is missing or different | Send `Authorization: Bearer KEY`; show the key with the command above. |
+| `401 Unauthorized` from a client | The key is missing or different | Send `Authorization: Bearer *** show the key with the command above. |
 | A client fails near 128,000 tokens | Container context is `128k`, client assumes more | Set Context length to `256k` and make sure the client's window matches. |
 | `docker logs` looks like a restart loop | It replays all history | Read the end of the log, or the engine log. |
 | Exit code 137 on stop | Docker killed it mid-unload | The `--stop-timeout 120` option is in Extra Parameters; do not remove it. |
@@ -245,11 +245,11 @@ Both templates on this page run large Qwen models on AMD cards and both serve Op
 
 ### Before you install
 
-1. **A supported card.** The image's bundled kernels cover **RDNA 4** (RX 9000 series, Radeon AI PRO R9700), **RDNA 3** (RX 7000 series) and **Ryzen AI Max** (Strix Halo). The engine starts on any AMD family, but another card needs a kernel plugin ([radiance docs](https://codeberg.org/StillDeadcode/radiance/src/tag/v1.17.0/docs/PLUGIN.md)). The host needs only the `amdgpu` kernel driver Unraid ships — no ROCm, no compiler, no driver plugin.
+1. **A supported card.** The image's bundled kernels cover **RDNA 4** (RX 9000 series, Radeon AI PRO R9700), **RDNA 3** (RX 7000 series) and **Ryzen AI Max** (Strix Halo). The engine starts on any AMD family, but another card needs a kernel plugin ([radiance docs](https://codeberg.org/StillDeadcode/radiance/src/tag/v2.1.0/docs/PLUGIN.md)). The host needs only the `amdgpu` kernel driver Unraid ships — no ROCm, no compiler, no driver plugin.
 2. **Resizable BAR** (Above 4G Decoding) on in the firmware. Without it the engine keeps kernel arguments in pinned host memory and reads them over the PCIe link on every dispatch.
 3. **Room on an SSD pool for the model packs** (table below), as a **direct pool path** (`/mnt/cache/...` or `/mnt/POOLNAME/...`), never `/mnt/user`: the engine reads models by direct I/O while serving, and Qwen3.8-Flash-Next streams its n-gram table from the folder.
 4. **Enough RAM for one-card Flash-Next** — that profile pins about 49 GiB of host memory (upstream's figure; it expects a 64 GB host). Every other single-card model on this page keeps its weights on the card and needs little beyond headroom.
-5. **One model at a time.** The engine fills the cards on purpose. Stop other GPU containers (transcoders, other LLM servers) first.
+5. **One engine at a time.** The server fills the cards on purpose (it can serve several of its own models at once). Stop other GPU containers (transcoders, other LLM servers) first.
 6. **An API key ready** — see [The API key](#the-api-key-never-auto-generated). This engine refuses to start without one.
 
 ### Install
@@ -258,95 +258,159 @@ Apps tab, search **Radiance-LLM**, click Install. The fields that matter:
 
 | Field | What to enter | Notes |
 |---|---|---|
-| Branch / Repository | `1.17.0` (default) or `latest` | Pin a version once tuned; see [Updating](#updating-and-pinning-1). |
+| Branch / Repository | `2.1.0` (default) or `latest` | Pin a version once tuned; see [Updating](#updating-and-pinning-1). |
 | WebUI / API port | `8180` or another free port | The engine listens on 8000 inside the container; this is the host port. 8080 and 8000 are commonly taken on Unraid. |
 | Models | `/mnt/cache/appdata/radiance/models` | The folder you put the `.rad` packs in, mounted read-only at `/models`. |
+| Config folder | `/mnt/cache/appdata/radiance/config` | The folder holding the YAML the engine starts from. Create it and put a config file in it **before** Apply (step 3 below). |
 | API key | `openssl rand -hex 24` | Required; the server will not start without it. |
-| Post Arguments | see below | The whole engine command line lives here. The default is safe for one card. |
+| Post Arguments | `--config /config/radiance.yaml` (default) | Since 2.0.0 this holds only the name of the YAML inside the Config folder. Every other setting lives in that file. |
 
-Download a model into the Models folder (from a shell):
+1. Download a model pack into the Models folder (from a shell):
 
 ```
-wget -P /mnt/cache/appdata/radiance/models https://huggingface.co/StillDeadcode/qwen3.8-27b-mxfp4/resolve/main/qwen3.8-27b-mxfp4.rad
+wget -P /mnt/cache/appdata/radiance/models https://huggingface.co/StillDeadcode/qwen3.8-27b-iqr-v4/resolve/main/qwen3.8-27b-iq8r-v4.rad
 ```
 
-Then put its exact filename after `/models/` in **Post Arguments**. Advanced: to pin a one-card model to a specific card on a multi-card box, use the form's *Add another parameter (ENV)* mechanism with `RADIANCE_GPU=0` — the template deliberately ships no empty row for it.
+2. Create the Config folder and save this starter into it as **`radiance.yaml`** (Users Files browser, or `nano` from a shell):
 
-### Choosing a model
+```yaml
+# /mnt/cache/appdata/radiance/config/radiance.yaml
+server:
+  host: "::"
+  port: 8000
+  api-key-env: RADIANCE_API_KEY
+models:
+  qwen38:
+    model: /models/qwen3.8-27b-iq8r-v4.rad
+```
 
-Sizes are upstream's. All fit **one 32 GB card** unless noted; vision and generation models are served by the same engine.
+The name under `models:` (`qwen38` above) is the model id your requests send in `model` — rename it to whatever your clients expect. Add `tp: 2` to an entry to split the model over two cards. Your Models folder is `/models` inside the container.
 
-| Model pack | Size | Notes |
-|---|---|---|
-| `qwen3.8-27b-mxfp4.rad` | 19 GiB | The single-card default: 27B dense, MXFP4, DFlash2 drafter, vision. |
-| `qwen3.8-27b-iq2r-v4.rad` … `iq8r-v4.rad` | 10–28 GiB | Same model, pick a size that leaves room for your context. |
-| `qwen3.8-27b-fp8.rad` | 29 GiB | Highest quality the dense line ships; tight on 32 GB with a big context. |
-| `qwen3.6-35b-a3b-fp8.rad` / `ornith-1.5-35b-a3b-w4a8.rad` | 35 / 20 GiB | MoE, MTP; the w4a8 Ornith fits one card. |
-| `qwen3.8-next-flash-fp8-iq4r-moe.rad` | 114 GiB | The flagship MoE. Two cards are its home profile; the one-card profile pins ~49 GiB of host RAM (upstream's numbers: ~2,545 tok/s prefill of 26K prompts at 4096-token steps, decode step 28.0 ms at one sequence). |
-| Image / video / speech / music packs | 3–62 GiB | Flux 3 Klein 9.3 GiB, Krea 2 16 GiB, Breeze TTS 5.5 GiB, LTX-2.5 video 37 GiB and more — see the [upstream README table](https://codeberg.org/StillDeadcode/radiance#models). |
+3. Put a key in the **API key** field and Apply. `http://SERVER:8180/` opens the live dashboard while the model loads.
 
-### Launch options (Post Arguments)
+Once the container runs, you can validate any edit to the YAML **without restarting**:
 
-Everything after the image name goes to the engine. The template default is
+```
+docker exec Radiance-LLM radiance --config /config/radiance.yaml --check
+```
+
+To serve several models from one server, give each an entry under `models:`. A request picks its model by name; an unnamed model loads on first request and parks itself into host RAM when another needs room (back in about a second). To limit which cards models may use, add a `cards:` level to the YAML (e.g. `cards: [0]` for the first card only).
+
+### The config file (where every setting lives)
+
+One YAML file, one level per line:
+
+| Level | Holds |
+|---|---|
+| `server:` | the listener and the process: `host`, `port`, `api-key-env`, `log` (`info`, `debug`, `trace`), and more |
+| `memory:` | per-card budgets: `gpu-headroom-mib`, `host-mib` (pinned host memory cap), `disk-tier` |
+| `scheduler:` | `load-timeout`, `drain-timeout`, `stuck-exit` |
+| `cards:` | which card indices the models may use |
+| `models:` | one entry per model — **every other setting is a key of the entry** |
+
+The keys worth knowing, one-card advice first:
+
+| Key | What it does |
+|---|---|
+| `model: PATH` (entry) | The `.rad` pack this entry serves. The only required key. |
+| `api-key-env: NAME` (`server:`) | Read the API key from environment variable `NAME`, so it is never written into the config file. An empty or unset variable **refuses startup** — fail-closed working, not a bug. |
+| `host:` / `port:` (`server:`) | Listen address (default `::`) and port (default 8000). Keep the port equal to the container side of your port mapping; usually leave both alone. |
+| `tp: N` (entry) | Tensor parallelism: how many cards split the model. One card: omit it (or `1`). Two cards: `tp: 2`. It adds capacity more than speed; decode barely changes when the model already fits one card. *Measured two R9700: prose decode 137–170 tok/s at `tp: 2` with Flash-Next.* |
+| `tp-wire: wht6` (entry) | How the ranks exchange (two cards). `wht6` is the wide wire; upstream's production Flash-Next profile uses it. Harmless at `tp: 1`. |
+| `max-num-seqs: N` (entry) | Sequences (requests) decoded together. Each costs KV cache. One card with a big model: `2` to `4`. Two cards running Flash-Next: `4` to `8` (upstream production: 8). |
+| `max-model-len: N` (entry) | The context window, in tokens. Agents that keep long tool histories want `200000` or `262144`; the client's own configured window must not exceed it. Context is carved from VRAM: lower it to fit more sequences. |
+| `kv-cache-dtype: i8` (entry) | Conversation memory at 8-bit int: roughly halves KV RAM for a quality change nobody notices in chat. (The 1.x profiles used `fp8`; the author's production 2.x file runs `i8`.) |
+| `placement: expert_tiered` (entry) | MoE models only: experts the cards cannot hold go to a pinned host pool instead of being re-read from disk every token. Two cards: always worth it. One card with Flash-Next: keep it and set the pool below. |
+| `host-pool-mib: N` (entry) | Size of that pinned host pool (MiB). Upstream: `12288` for two cards on Flash-Next; **43000** for one card (that is the ~49 GiB pin). Leave absent on dense models that fit the card. |
+| `gpu-headroom-mib: 96` (`memory:`) | VRAM to leave free per card. `96` is upstream's; leave it unless another process shares the card. |
+| `ngram-placement: disk` (entry) | Flash-Next only: stream the n-gram embedding table from the model file (needs the fast pool and unconfined seccomp). `ram` would lock 47.7 GiB in RAM. |
+| `prefix-cache-mib: N` (entry) | Finished conversations kept in host memory so repeat prompts skip prefill. Upstream: `4096`. *Measured: a 101,111-token prompt answered with 90,112 tokens already cached, time to first token 2.5 s.* |
+| `num-speculative-tokens: N` (entry) | MTP drafter depth: predict N tokens per step and verify in parallel. `3` is upstream's production value; it is most of the reason decode is as fast as it is on models that ship a drafter. |
+| `max-num-batched-tokens: N` (entry) | Prefill chunk per step. `2048` is the general default; upstream raises it to `4096` for one-card Flash-Next because prefill there is PCIe-link-bound (2,545 vs 1,413 tok/s on 26K prompts, upstream's measurement). With 4096 steps also set `checkpoint-interval: 4096` so a prefill chunk never straddles a checkpoint. |
+
+Every old 1.x flag became a key of the same name (`--max-num-seqs 8` is `max-num-seqs: 8`), and the engine prints the equivalent file when handed an old flag line. To convert an old command line yourself:
+
+```
+docker exec Radiance-LLM rad-yaml --model /models/m.rad --tp 2 --max-num-seqs 8
+```
+
+**Two-card production example (the author's own Unraid box, Qwen3.8-Flash-Next on two R9700):**
+
+```yaml
+server:
+  host: "::"
+  port: 8000
+  api-key-env: RADIANCE_API_KEY
+memory:
+  gpu-headroom-mib: 96
+scheduler:
+  stuck-exit: 300
+models:
+  flashnext:
+    model: /models/qwen3.8-next-flash-iqr-v4.rad
+    tp: 2
+    tp-wire: wht6
+    max-num-seqs: 4
+    max-model-len: 262144
+    placement: expert_tiered
+    host-pool-mib: 12288
+    kv-cache-dtype: i8
+    prefix-cache-mib: 4096
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    max-num-batched-tokens: 2048
+```
+
+This is the author's live file (entry renamed here — name it what your clients request): upstream's production fleet uses 200000/8, the author's box runs 262144/4 because it serves one agentic client with a large window. Raise `max-num-seqs` toward 8 when several clients share the server. Verified under live agent traffic since 2026-11-15.
+
+### Staying on 1.x
+
+If you cannot move off FP8/MXFP4 packs yet: pick Branch **1.17.0** at install and replace Post Arguments with the old flag line —
 
 ```
 --model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY
 ```
 
-which is one card, engine defaults everywhere else. What the useful flags do, with single-card advice first and two-card recommendations after:
+— and ignore the Config folder field (1.x never reads it; Docker creates the folder for you). The full 1.x flag guide lives in this file's git history. Note the 1.x line is frozen: upstream only fixes 2.x.
 
-| Flag | What it does |
-|---|---|
-| `--model PATH` | The `.rad` pack to serve. The only required flag. Path is inside the container, so your Models folder is `/models`. |
-| `--api-key-env NAME` | Read the API key from environment variable `NAME`. Kept out of the command line, where every process on the host could read it. An empty or unset variable **refuses startup** — that is fail-closed working, not a bug. |
-| `--host ADDR` / `--port N` | Listen address (default `0.0.0.0`) and port (default 8000). Keep the port equal to the container side of your port mapping; usually leave both alone. |
-| `--tp N` | Tensor parallelism: how many cards split the model. One card: omit it (or `1`). Two cards: `--tp 2`. It adds capacity more than speed; decode barely changes when the model already fits one card. *Measured two R9700: prose decode 137–170 tok/s at `--tp 2` with Flash-Next.* |
-| `--tp-wire W` | How the ranks exchange (two cards). `wht6` is the wide wire; upstream's production Flash-Next profile uses it. Harmless at `--tp 1`, so the template does not carry it. |
-| `--max-num-seqs N` | Sequences (requests) decoded together. Each costs KV cache. One card with a big model: `2` to `4`. Two cards running Flash-Next: `4` to `8` (upstream production: 8). |
-| `--max-model-len N` | The context window, in tokens. Agents that keep long tool histories want `200000` or `262144`; the client's own configured window must not exceed it. Context is carved from VRAM: lower it to fit more sequences. |
-| `--kv-cache-dtype fp8` | Conversation memory at 8-bit float: roughly halves KV RAM for a quality change nobody notices in chat. Upstream ships it in every production profile. |
-| `--placement expert_tiered` | MoE models only: experts the cards cannot hold go to a pinned host pool instead of being re-read from disk every token. Two cards: always worth it. One card with Flash-Next: keep it and set the pool below. |
-| `--host-pool-mib N` | Size of that pinned host pool (MiB). Upstream: 12288 for two cards on Flash-Next; **43000** for one card (that is the ~49 GiB pin). Leave empty/absent on dense models that fit the card. |
-| `--gpu-headroom-mib N` | VRAM to leave free per card. `96` is upstream's; leave it unless another process shares the card. |
-| `--ngram-placement disk` | Flash-Next only: stream the n-gram embedding table from the model file (needs the fast pool and unconfined seccomp). `ram` would lock 47.7 GiB in RAM. |
-| `--prefix-cache-mib N` | Finished conversations kept in host memory so repeat prompts skip prefill. Upstream: `4096`. *Measured: a 101,111-token prompt answered with 90,112 tokens already cached, time to first token 2.5 s.* |
-| `--num-speculative-tokens N` | MTP drafter depth: predict N tokens per step and verify in parallel. `3` is upstream's production value; it is most of the reason decode is as fast as it is on models that ship a drafter. |
-| `--max-num-batched-tokens N` | Prefill chunk per step. `2048` is the general default; upstream raises it to `4096` for one-card Flash-Next because prefill there is PCIe-link-bound and a bigger step amortises expert copies (2,545 vs 1,413 tok/s on 26K prompts, upstream's measurement). With 4096 steps also set `--checkpoint-interval 4096` so a prefill chunk never straddles a checkpoint. |
-| `--served-model-name NAME` | The model id `/v1/models` advertises. Cosmetic; set it if a client insists on a particular name. |
+### Choosing a model
 
-**Two-card recommended (measured on the author's server, Qwen3.8-Flash-Next):**
+Sizes are upstream's (the [full table](https://codeberg.org/StillDeadcode/radiance#models) also lists Gemma 4, MiniCPM5, image, video, speech and music packs). All fit **one 32 GB card** unless noted. 2.x serves the int8 packs below; the FP8 and MXFP4 packs from 1.x no longer load.
+
+| Model pack | Size | Notes |
+|---|---|---|
+| `qwen3.8-27b-iq2r-v4.rad` … `iq8r-v4.rad` | 10–28 GiB | 27B dense, IQR-V4 (2.5 to 8 bits a weight), drafter, vision. Upstream's one-card pick is `iq4r-l`; otherwise pick a size that leaves room for your context. |
+| `qwen3.8-27b-iq8r-dflash.rad` | 29 GiB | 27B IQ8R with DFlash2 drafter and vision; upstream runs it on two cards. |
+| `qwen3.6-35b-a3b-iq8r.rad` | 35 GiB | MoE, MTP. |
+| `qwen3.8-next-flash-iqr-v4.rad` | 113 GiB | The flagship MoE: IQR-V4 experts, int8 trunk, MTP, vision. Two cards are its home profile; the one-card profile pins ~49 GiB of host RAM (upstream's numbers: ~2,545 tok/s prefill of 26K prompts at 4096-token steps, decode step 28.0 ms at one sequence). |
+| `minicpm5-2b-iq8r.rad` | 3 GiB | Tiny: proof-of-life and dashboard testing without a big download. |
+
+Example downloads (into `/mnt/cache/appdata/radiance/models`):
 
 ```
---model /models/qwen3.8-next-flash-fp8-iq4r-moe.rad --api-key-env RADIANCE_API_KEY --tp 2 --tp-wire wht6 --max-num-seqs 4 --max-model-len 262144 --placement expert_tiered --host-pool-mib 12288 --gpu-headroom-mib 96 --kv-cache-dtype fp8 --prefix-cache-mib 4096 --ngram-placement disk --num-speculative-tokens 3 --max-num-batched-tokens 2048
-```
-
-This is the upstream production profile (`deploy/compose/flashnext.yaml`) with a 262144-token window and 4 slots instead of upstream's 200000/8, because the author's box serves one agentic client with a large window. Raise `--max-num-seqs` toward 8 when several clients share the server. This exact command line is what the author's Unraid host runs in production (installed from this template, verified under live agent traffic on 2026-11-12).
-
-**Two-card recommended (dense 27B, most users' starting point):**
-
-```
---model /models/qwen3.8-27b-mxfp4.rad --api-key-env RADIANCE_API_KEY --tp 2 --max-model-len 262144 --kv-cache-dtype fp8 --num-speculative-tokens 3
+wget https://huggingface.co/StillDeadcode/qwen3.8-next-flash-iqr-v4/resolve/main/qwen3.8-next-flash-iqr-v4.rad
+wget https://huggingface.co/StillDeadcode/qwen3.8-27b-iq8r-dflash/resolve/main/qwen3.8-27b-iq8r-dflash.rad
 ```
 
 ### The API key (never auto-generated)
 
-Unlike some servers, radiance **never creates a key for you** and never writes one to disk. Every request except `/health`, `/ping` and the dashboard must carry `Authorization: Bearer KEY` (or `X-Api-Key: KEY`), and **the server refuses to start if the key variable is empty** — so a blank API key field is an immediate, deliberate failure, not a silent open server. Make a key:
+Unlike some servers, radiance **never creates a key for you** and never writes one to disk. Every request except `/health`, `/ping` and the dashboard must carry `Authorization: Bearer *** (or `X-Api-Key: *** and **the server refuses to start if `api-key-env` names an empty variable** — so a blank API key field is an immediate, deliberate failure, not a silent open server. Make a key:
 
 ```
 openssl rand -hex 24
 ```
 
-Without any key flag at all the server runs open on the LAN, with `/diagnostics` and the admin routes restricted to loopback clients. On a trusted network that is a choice; never expose an open server to the internet.
+The key reaches the server as the `RADIANCE_API_KEY` environment variable from the form; the `api-key-env` line in the YAML only names that variable. Delete the line to run open on the LAN, with `/diagnostics` and the admin routes restricted to loopback clients. On a trusted network that is a choice; never expose an open server to the internet.
 
 ### First start, logs, stopping
 
-Loading a 19 GiB pack takes about a minute on an NVMe pool; the flagship 114 GiB pack takes longer, so give the container a few minutes before judging. The log prints a startup report and ends with the server listening.
+Loading a 28 GiB pack takes about a minute on an NVMe pool; the flagship 113 GiB pack takes longer, so give the container a few minutes before judging. The log prints a startup report and ends with the server listening.
 
 ```
 docker logs -f Radiance-LLM                               # startup report and per-request lines
 curl -s -o /dev/null -w "%{http_code}\n" http://SERVER-IP:8180/health   # 200 when serving
-curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/v1/models  # the served model name
-curl -s -H "Authorization: Bearer KEY" http://SERVER-IP:8180/diagnostics | head -40   # the startup report as JSON
+curl -s -H "Authorization: Bearer ***" http://SERVER-IP:8180/v1/models  # the served model names
+curl -s -H "Authorization: Bearer ***" http://SERVER-IP:8180/diagnostics | head -40   # the startup report as JSON
 ```
 
 `GET /` opens the live dashboard (requests, cache, tokens per second). `/metrics` speaks Prometheus. The image is a `FROM scratch` rootfs: the only shell is busybox (`docker exec -it Radiance-LLM sh`), and there is no package manager by design.
@@ -355,7 +419,7 @@ On stop the engine finishes the step in flight and releases the cards; the templ
 
 ### Performance reference (measured)
 
-Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0, the two-card line above, serving live agent traffic (from the container's own request log over ~30 minutes):
+Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0 (1.x flag era), serving live agent traffic (from the container's own request log over ~30 minutes):
 
 | Test | Result |
 |---|---|
@@ -364,27 +428,30 @@ Author's server, Qwen3.8-Flash-Next on two R9700, engine 1.17.0, the two-card li
 | Cold 130,008-token prompt | 14.3 s total, TTFT 2.7 s, 144.5 tok/s |
 | Prefix cache on a 101k-token agentic prompt | 90,112 of 101,111 tokens served from cache |
 
+Same box, engine 2.1.0 with the IQR-V4 pack and the production YAML above (bench harness, 2026-11-16): prose decode 114.8 tok/s, code decode 132.3 tok/s, warm TTFT 0.071 s, 8K-token prefill 2.06 s, 199.8 tok/s aggregate at three concurrent requests.
+
 ### Troubleshooting
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Exits at once with a message about the api key | The API key field is empty; the engine fails closed by design | Put a key in the API key field (`openssl rand -hex 24`). |
-| Exits with an unknown-option error mentioning an older version's flags | Branch moved, or a flag was mistyped | Check the flag list against the docs of **your** tag; pin `1.17.0`. |
-| Model file not found | Filename in Post Arguments does not match the pack in the Models folder exactly | `ls` the folder; copy the exact name after `/models/`. |
+| Exits at once with a message about the api key | The API key field is empty; `api-key-env` names an empty variable and the engine fails closed by design | Put a key in the API key field (`openssl rand -hex 24`). |
+| Exits at once with a YAML error (e.g. `anchor not found`) | The config file is not valid YAML (stray `**`, a value starting with `*` or `@`, tab indentation) | Fix the file; validate with `docker exec Radiance-LLM radiance --config /config/radiance.yaml --check`. |
+| Exits saying the old flag launch is gone / it wants a config file | Branch moved to 2.x while Post Arguments still holds a 1.x flag line | The engine prints the equivalent YAML; or convert with `rad-yaml` (see above). Or pick Branch 1.17.0. |
+| Model file not found | The `model:` path in the YAML does not match the pack in the Models folder exactly | `ls` the folder; copy the exact name after `/models/`. |
 | Flash-Next cannot serve / stalls reading the model | Mounted over `/mnt/user` (fuse), or Docker's default seccomp | Models must live on a direct pool path; keep `--security-opt seccomp=unconfined` in Extra Parameters. |
-| `401 authentication_error` from a client | Missing or wrong key | Send `Authorization: Bearer KEY` (also accepted: `X-Api-Key`). |
-| Client fails near a token count | The container's `--max-model-len` is smaller than the client's configured window | Raise the flag or lower the client's window; they must agree. |
+| `401 authentication_error` from a client | Missing or wrong key | Send `Authorization: Bearer *** (also accepted: `X-Api-Key`). |
+| Client fails near a token count | The entry's `max-model-len` is smaller than the client's configured window | Raise the key or lower the client's window; they must agree. |
 | Port shows another app's UI | Host port already taken (UniFi takes 8080; Grafana 3000) | Change the host port. |
-| Card hangs / engine refuses to serve at startup | Compute wave save/restore disabled (`amdgpu.cwsr_enable=0`) | It is the driver default on; if it was changed, restore it (or `--proceed-with-incompatible-configuration`, unsupported). |
+| Card hangs / engine refuses to serve at startup | Compute wave save/restore disabled (`amdgpu.cwsr_enable=0`) | It is the driver default on; if it was changed, restore it (or `proceed-with-incompatible-configuration: true`, unsupported). |
 | Another GPU container fails after installing this app | Radiance fills the cards on purpose | Run one LLM server at a time; `docker stop` the other. |
 | Container runs, but Unraid's Ports column is empty and nothing answers the host port | The port mapping did not survive container creation (seen on Unraid 7.4 when the form was edited after a failed create; the built-in bridge itself worked for other containers, so the cause was not pinned down) | Edit the container and make sure the port row reads 8180 -> 8000 and Apply; if the host port still never listens, switch the container to a custom Docker network - that is what restored it on the author's Unraid 7.4 host. |
 
 ### Updating and pinning
 
-`latest` follows each release. To stay put, keep the pinned tag under Branch. Releases move fast and occasionally rename flags, so after any engine update re-run a long prompt and a short chat before trusting it. Check a tag exists before pinning:
+`latest` follows each release. To stay put, keep the pinned tag under Branch. Releases move fast and occasionally add or rename config keys, so after any engine update run `--check` against your YAML, then re-run a long prompt and a short chat before trusting it. Check a tag exists before pinning:
 
 ```
-docker manifest inspect stilldeadcode/radiance:1.17.0 >/dev/null && echo exists
+docker manifest inspect stilldeadcode/radiance:2.1.0 >/dev/null && echo exists
 ```
 
 ---
